@@ -31,6 +31,7 @@ void main( void ) {
     vec3 col = vec3( 0. );
 
     // MAGIC
+    col.b = sin( a.a * b.b );
     
 	gl_FragColor = vec4( col.rgb, 1. ) ;
 }
