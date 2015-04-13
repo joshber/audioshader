@@ -1,43 +1,60 @@
 import ddf.minim.*;
 
-final int bufferSize = 1024; // TODO can we make this bigger to get a half-second of buffer? 22050?
-final float sampleRate = 44100.;
-
 Minim minim;
 AudioInput input;
 ShaderPipe pipe;
 
 PShader shadr;
 
+bool displaySource = false;
+bool displaySpectrum = false;
+bool record = false;
+
 void setup() {
     size( 1280, 720, P2D );
+    frameRate( 60 );
     
     // Set up audio listener
     minim = new Minim( this );
-    input = new minim.getLineIn( Minim.STEREO, bufferSize, sampleRate, 16/*bit depth: >16 not supported*/ );
-    pipe = new ShaderPipe( shadr );
+    input = new minim.getLineIn();
+    pipe = new ShaderPipe();
     input.addListener( pipe );
     
-    refresh(); // load shader and configuration
+    refresh(); // load shader and configuration, if any
     
-    shadr.set( "resolution", float(width), float(height) );
+    shadr.set( "resolution", float( width ), float( height ) );
+
+    // Zero out signal uniforms
+    shadr.set( "a", 0., 0., 0., 0. );
+    shadr.set( "b", 0., 0., 0., 0. );
 }
     
 void draw() {
     background( 0 );
-    // blabla
     
-    shadr.set( "time", float( millis() ) ); // float() bc GLSL < 3.0 can't do modulo on int
-    pipe.passthru();
+    // float() bc GLSL < 3.0 can't do modulo on int
+    shadr.set( "time", float( millis() ) );
+    shadr.set( "frame", float( frameCount ) );
+
+    pipe.passthru(); // pass the signal
 
     shader( shadr );
     rect( 0, 0, width, height );
     
-    //saveFrame( "data/out/######.jpg" ); // record frames
+    if ( displaySource ) {
+        // TODO: load shader into a string, display in overlay
+    }
+    if ( displaySpectrum ) {
+        // TODO: display spectrum in an overlay
+    }
+    
+    if ( record ) {
+        saveFrame( "data/out/######.jpg" ); // record frames
+    }
 }
 
 void refresh() {
-    // load configuration, shader
+    shadr.loadShader( "shader/shader.glsl" );
 }
 
 void stop() {
@@ -51,21 +68,32 @@ void keyPressed() {
     if ( key == 'r' || key == 'R' ) {
         refresh();
     }
+    else if ( key == 's' || key == 'S' ) {
+        displaySource = displaySource ? false : true;
+    }
+    else if ( key == '%' ) {
+        displaySpectrum = displaySpectrum ? false : true;
+    }
+    else if ( key == '*' ) {
+        record = record ? false : true;
+    }
 }
 
 class ShaderPipe implements AudioListener {
-    private float[] left;
-    private float[] right;
-    
+    private float[] left, right;
+
     private FFT fft;
-    private int binSize; // frequency bands per bin passed to shader
-    
+
     ShaderPipe() {
         right = left = null;
-        fft = new FFT( bufferSize /2, sampleRate ); // /2 so we can offset sample frame to sample the past
-        binSize = fft.specSize() /4; // 4 freq band binds, so spectrum fits in a vec4
+
+        fft = new FFT( input.bufferSize(), input.sampleRate() );
+        fft.logAverages( int( input.sampleRate() ) <<5 /*minimum bandwidth*/, 1 /*bands per octave*/ );
+            // <<5 == /32 -- 5 bands total up to Nyquist frequency
+            // If sample rate == 44.1kHz, first four bands cover up to 11kHz
+            // We can tune this for greater sensitivity in the low range, i.e. drop minimum to <<6 or <<7
     }
-    
+      
     synchroized void samples( float[] s ) {
         left = s;
     }
@@ -75,24 +103,19 @@ class ShaderPipe implements AudioListener {
     }
     
     synchronized void passthru() {
-        float[] l = new float[4];
-        float[] r = new float[4];
-        float acc;
+        // Two uniform vec4 -- a for left, b for right
         
-        // for ( offset = 0 ... ) {
-        // iterate forward( left, offset ) -- to get spectra for now plus a certain number into the past
-        fft.forward( left );
-        acc = 0.;
-        for ( int i = 0; i < fft.specSize(); ++i ) {
-            if ( 
-
-        // FFT spectral decomposition -- vec4 for low, low-mid, hi-mid, hi
-        // pass separate vec4s for now, -n ms ... -- to let us play with laminarities on different time scales
-        // bin buffer values and set shader uniforms
+        // if left==null, i.e., no signal, just send the most recently obtained spectrum
+        // The frozen screen is more informative about what went wrong and when than a blank
         
-        // maybe forget left/right and just take the spectrum of the mix?
-        
-        // ... buffer size / sample rate = time depth of buffer in seconds
-        // http://code.compartmental.net/minim/javadoc/ddf/minim/analysis/FFT.html
+        if ( left ) {
+            fft.forward( left );
+            shadr.set( "a", fft.getBand( 0 ), fft.getBand( 1 ), fft.getBand( 2 ), fft.getBand( 3 ) );
+        }
+        // if right==null, i.e., mono signal, b gets the same values as a
+        if ( right ) {
+            fft.forward( right );
+        }
+        shadr.set( "b", fft.getBand( 0 ), fft.getBand( 1 ), fft.getBand( 2 ), fft.getBand( 3 ) );
     }
 }
