@@ -11,7 +11,9 @@ PShader shadr;
 bool displaySource = false;
 bool displaySpectrum = false;
 bool record = false;
-float srcSize = 18.;
+PFont srcFont, specFont;
+float srcFontSize = 18.;
+float specFontSize = 12.;
 
 String[] src;
 
@@ -34,9 +36,8 @@ void setup() {
     shadr.set( "b", 0., 0., 0., 0. );
     
     // For showing source and spectrum
-    PFont srcFont = createFont( "fonts/InputSans-Regular", 18, true /*antialiasing*/ );
-    textFont( srcFont );
-    textSize( srcSize );
+    srcFont = createFont( "fonts/InputSans-Regular", srcFontSize, true /*antialiasing*/ );
+    specFont = createFont( "fonts/InputSansNarrow-Regular", specFontSize, true );
     textAlign( LEFT, TOP );
     noStroke();
 }
@@ -65,12 +66,15 @@ void draw() {
         fill( 255, .5 );
         rect( 0, 0, width / 2, height );
         fill( 0 ); // text color TODO
+        
+        textFont( srcFont );
+        textSize( srcFontSize );
 
         int i;
         for ( i = 0; i < src.size() && ! src[i].startsWith( "void main" ) ; ++i ) ;
 
-        for ( int j = 1 ; i < src.size() ; ++i, ++j ) {
-            text( src[i], srcSize * 1.5, srcSize * 1.5 * j );
+        for ( int j = 1 ; i < src.size() && 1.5 * j < height ; ++i, ++j ) {
+            text( src[i], srcFontSize * 1.5, srcFontSize * 1.5 * j );
         }
     }
 
@@ -148,6 +152,14 @@ class ShaderPipe implements AudioListener {
     }
     
     synchronized void drawSpectrum() {
+        // Background scrim and text color
+        fill( 255, .5 );
+        //rect( width - x, height - y, x, y );
+        //fill( 0 ); // text color TODO
+
+        textFont( specFont );
+        textSize( specFontSize );
+        
         // TODO
     }
 }
