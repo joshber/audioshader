@@ -1,3 +1,5 @@
+// Longer-term TODO: Read source from interim save file with caret metadata, show the editing quasi-live
+
 import ddf.minim.*;
 
 Minim minim;
@@ -9,6 +11,9 @@ PShader shadr;
 bool displaySource = false;
 bool displaySpectrum = false;
 bool record = false;
+float srcSize = 18.;
+
+String[] src;
 
 void setup() {
     size( 1280, 720, P2D );
@@ -27,6 +32,13 @@ void setup() {
     // Zero out signal uniforms
     shadr.set( "a", 0., 0., 0., 0. );
     shadr.set( "b", 0., 0., 0., 0. );
+    
+    // For showing source and spectrum
+    PFont srcFont = createFont( "fonts/InputSans-Regular", 18, true /*antialiasing*/ );
+    textFont( srcFont );
+    textSize( srcSize );
+    textAlign( LEFT, TOP );
+    noStroke();
 }
     
 void draw() {
@@ -38,18 +50,34 @@ void draw() {
 
     pipe.passthru(); // pass the signal
 
+    // Blink and you'll miss it
     shader( shadr );
     rect( 0, 0, width, height );
-    
+
+    if ( displaySpectrum )
+        pipe.drawSpectrum();
+
+    if ( displaySource || record )
+        src = loadStrings( "shader/shader.glsl" );
+
     if ( displaySource ) {
-        // TODO: load shader into a string, display in overlay
+        // Background scrim and text color
+        fill( 255, .5 );
+        rect( 0, 0, width / 2, height );
+        fill( 0 ); // text color TODO
+
+        int i;
+        for ( i = 0; i < src.size() && ! src[i].startsWith( "void main" ) ; ++i ) ;
+
+        for ( int j = 1 ; i < src.size() ; ++i, ++j ) {
+            text( src[i], srcSize * 1.5, srcSize * 1.5 * j );
+        }
     }
-    if ( displaySpectrum ) {
-        // TODO: display spectrum in an overlay
-    }
-    
+
+    // Save the frame and the shader (no synchronization, always a chance of slippage)
     if ( record ) {
-        saveFrame( "data/out/######.jpg" ); // record frames
+        saveFrame( "data/out/frames/######.jpg" );
+        saveStrings( String.format( "data/out/shaders/%06d.glsl", frameCount ), src );
     }
 }
 
@@ -117,5 +145,9 @@ class ShaderPipe implements AudioListener {
             fft.forward( right );
         }
         shadr.set( "b", fft.getBand( 0 ), fft.getBand( 1 ), fft.getBand( 2 ), fft.getBand( 3 ) );
+    }
+    
+    synchronized void drawSpectrum() {
+        // TODO
     }
 }
