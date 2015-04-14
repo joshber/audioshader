@@ -1,3 +1,5 @@
+// KEY TODO: Get the spectrum visualizer working, so we can see what we're sending as signal
+
 // Longer-term TODO: Read source from interim save file with caret metadata, show the editing quasi-live
 
 import ddf.minim.*;
@@ -12,11 +14,16 @@ PShader shadr;
 boolean displaySource = false;
 boolean displaySpectrum = false;
 boolean record = false;
+
 PFont srcFont, specFont;
-float srcFontSize = 14.;
+float srcFontSize = 12.;
 float specFontSize = 10.;
 
-String[] src;
+String[] src, src0;
+int[] diffs;
+
+final String shaderPath = "shader/shader.glsl";
+
 
 void setup() {
     size( 1280, 720, P2D );
@@ -29,27 +36,31 @@ void setup() {
     pipe = new ShaderPipe();
     input.addListener( pipe );
     
+    // For highlighting source diffs
+    src = loadStrings( shaderPath );
+    diffs = new int[200];
+    for ( int i = 0; i < 200; ++i )
+        diffs[i] = 0;
+        
     refresh(); // load shader and configuration, if any
-    
-    shadr.set( "resolution", float( width ), float( height ) );
-
-    // Zero out signal uniforms
-    shadr.set( "a", 0., 0., 0., 0. );
-    shadr.set( "b", 0., 0., 0., 0. );
     
     // For showing source and spectrum
     srcFont = createFont( "fonts/InputSans-Regular", srcFontSize, true /*antialiasing*/ );
     specFont = createFont( "fonts/InputSansNarrow-Regular", specFontSize, true );
     textAlign( LEFT, TOP );
-    noStroke();
+    noStroke();    
 }
     
 void draw() {
     background( 0. );
     
+    // Twice a second, check for an updated shader
+    if ( frameCount % 30 == 0 )
+        refresh();
+    
     // float() bc GLSL < 3.0 can't do modulo on int
-    shadr.set( "time", float( millis() ) );
-    shadr.set( "frame", float( frameCount ) );
+    shadr.set( "t", float( millis() ) / 1000. );
+    shadr.set( "f", float( frameCount ) );
 
     pipe.passthru(); // pass the signal
 
@@ -67,26 +78,42 @@ void draw() {
 
     if ( displaySource ) {
         pushStyle();
-        
+                
         // Background scrim and text color
-        fill( 1., 1., 1., .67 );
+        fill( 1., 1., 1., .5 );
         rect( 0, 0, width / 2, height );
-        fill( 0 ); // text color
+        fill( 0. ); // text color
         
         textFont( srcFont );
         textSize( srcFontSize );
 
-        int i;
+        int i, j;
         for ( i = 0; i < src.length && ! src[i].startsWith( "void main" ) ; ++i ) ;
+        for ( j = 0; j < src0.length && ! src[j].startsWith( "void main" ) ; ++j ) ;
 
-        for ( int j = 1 ; i < src.length && 1.5 * ( j + 1 ) < height ; ++i, ++j ) {
-            text( src[i], srcFontSize * 1.5, srcFontSize * 1.5 * j );
+        for ( int k = 1 ; i < src.length && 1.5 * ( k + 2 ) < height ; ++i, ++k ) {
+            // if corresponding lines of the shader file, counting from start of main(),
+            // differ between current source and diffs baseline, reset the diffs counter for this line
+            if ( ! src[i].equals( src0[j++] ) ) {
+                diffs[i] = 1800; // 1800 frames == c.30s
+            }
+            // diffs highlighting fades over 1800 frames (c.30s) from most recent diff on this line
+            if ( diffs[i] > 0 ) {
+                //println( String.format( "%02d %04d", i, diffs[i] ) ); 
+                pushStyle();
+                fill( 1., 1., 1., .33 / 3600. * diffs[i] );
+                rect( 0, 1.5 * k * srcFontSize, width / 2, 1.5 * srcFontSize );
+                popStyle();                
+                --diffs[i];
+            }
+            
+            text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
         }
 
         // "Recording" indicator
         if ( record ) {
             fill( 1., 0., 0., 1. );
-            text( String.format( "Recording ... Frame %06d", frameCount ), srcFontSize * 1.5, height - 1.5 * srcFontSize );
+            text( String.format( "Recording: Frame %06d", frameCount ), srcFontSize * 1.5, height - 2. * srcFontSize );
         }
         
         popStyle();
@@ -94,13 +121,20 @@ void draw() {
 
     // Save the frame and the shader (no synchronization, always a chance of slippage)
     if ( record ) {
-        saveFrame( "data/out/frames/######.jpg" );
-        saveStrings( String.format( "data/out/shaders/%06d.glsl", frameCount ), src );
+        String path = String.format( "data/out/%04d-%02d-%02d/", year(), month(), day() );
+        saveFrame( path + "frames/######.jpg" );
+        saveStrings( path + String.format( "shaders/%06d.glsl", frameCount ), src );
     }
 }
 
+// comparing last-modified dates using Java Nio proved gross,
+// so we simply reload and re-baseline diffs every so many frames
 void refresh() {
-    shadr = loadShader( "shader/shader.glsl" );
+    shadr = loadShader( shaderPath );
+    
+    shadr.set( "resolution", float( width ), float( height ) );
+        
+    src0 = src; // update diffs baseline
 }
 
 void stop() {
@@ -111,10 +145,7 @@ void stop() {
 }
 
 void keyPressed() {
-    if ( key == 'r' || key == 'R' ) {
-        refresh();
-    }
-    else if ( key == 's' || key == 'S' ) {
+    if ( key == 's' || key == 'S' ) {
         displaySource = displaySource ? false : true;
     }
     else if ( key == '%' ) {
@@ -122,6 +153,9 @@ void keyPressed() {
     }
     else if ( key == '*' ) {
         record = record ? false : true;
+    }
+    else if ( key == 'r' || key == 'R' ) {
+        refresh();
     }
 }
 
@@ -150,33 +184,36 @@ class ShaderPipe implements AudioListener {
     
     synchronized void passthru() {
         // Two uniform vec4 -- a for left, b for right
-        
-        // if left==null, i.e., no signal, just send the most recently obtained spectrum
-        // The frozen screen is more informative about what went wrong and when than a blank
+        // TODO scale a, b to [0,1]
         
         if ( left != null ) {
             fft.forward( left );
             shadr.set( "a", fft.getBand( 0 ), fft.getBand( 1 ), fft.getBand( 2 ), fft.getBand( 3 ) );
+        
+            // if right==null, i.e., mono signal, b gets the same values as a
+            if ( right != null ) {
+                fft.forward( right );
+            }
+            shadr.set( "b", fft.getBand( 0 ), fft.getBand( 1 ), fft.getBand( 2 ), fft.getBand( 3 ) );
         }
-        // if right==null, i.e., mono signal, b gets the same values as a
-        if ( right != null ) {
-            fft.forward( right );
+        else {
+            shadr.set( "a", 0., 0., 0., 0. );
+            shadr.set( "b", 0., 0., 0., 0. );
         }
-        shadr.set( "b", fft.getBand( 0 ), fft.getBand( 1 ), fft.getBand( 2 ), fft.getBand( 3 ) );
     }
     
     synchronized void drawSpectrum() {
         pushStyle();
         
         // Background scrim and text color
-        fill( 0., 0., 0., .67 );
+        fill( 1., 1., 1., .5 );
         //rect( width - x, height - y, x, y );
-        //fill( 0 ); // text color TODO
+        //fill( 0. ); // text color TODO
 
         textFont( specFont );
         textSize( specFontSize );
         
-        // TODO
+        // TODO include running time, sample rate
         
         popStyle();
     }
