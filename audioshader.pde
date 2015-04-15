@@ -59,7 +59,7 @@ void draw() {
         refresh();
     
     // float() bc GLSL < 3.0 can't do modulo on int
-    shadr.set( "t", float( millis() ) / 1000. );
+    shadr.set( "t", float( millis() ) );
     shadr.set( "f", float( frameCount ) );
 
     pipe.passthru(); // pass the signal
@@ -80,7 +80,7 @@ void draw() {
         pushStyle();
                 
         // Background scrim and text color
-        fill( 1., 1., 1., .5 );
+        fill( 1., 1., 1., .67 );
         rect( 0, 0, width / 2, height );
         fill( 0. ); // text color
         
@@ -94,14 +94,14 @@ void draw() {
         for ( int k = 1 ; i < src.length && 1.5 * ( k + 2 ) < height ; ++i, ++k ) {
             // if corresponding lines of the shader file, counting from start of main(),
             // differ between current source and diffs baseline, reset the diffs counter for this line
-            if ( ! src[i].equals( src0[j++] ) ) {
+            if ( i < diffs.length && ! src[i].equals( src0[j++] ) ) {
                 diffs[i] = 1800; // 1800 frames == c.30s
             }
             // diffs highlighting fades over 1800 frames (c.30s) from most recent diff on this line
             if ( diffs[i] > 0 ) {
                 //println( String.format( "%02d %04d", i, diffs[i] ) ); 
                 pushStyle();
-                fill( 1., 1., 1., .33 / 3600. * diffs[i] );
+                fill( 1., 1., 1., .33 / 1800. * diffs[i] );
                 rect( 0, 1.5 * k * srcFontSize, width / 2, 1.5 * srcFontSize );
                 popStyle();                
                 --diffs[i];
@@ -206,15 +206,32 @@ class ShaderPipe implements AudioListener {
         pushStyle();
         
         // Background scrim and text color
+        float hEdge = width - width / 2;
+        float vEdge = height - .25 * height;
+        
         fill( 1., 1., 1., .5 );
-        //rect( width - x, height - y, x, y );
-        //fill( 0. ); // text color TODO
+        rect( hEdge, vEdge, width - hEdge, height - vEdge );
 
+        fill( 0. ); // text color TODO        
         textFont( specFont );
         textSize( specFontSize );
         
-        // TODO include running time, sample rate
-        
+        // TODO running time
+        text( String.format( "%.1f KHz", input.sampleRate() / 1000. ), hEdge + 1.5 * specFontSize, vEdge + 1.5 * specFontSize );
+
+        if ( left != null ) {
+            fft.forward( left );
+            for ( int i = 0; i < fft.specSize(); ++i ) {
+                // TODO DRAW THE SPECTRUM
+            }
+        }    
+        if ( right != null ) {
+            fft.forward( right );
+            for ( int i = 0; i < fft.specSize(); ++i ) {
+                // TODO DRAW THE SPECTRUM
+            }
+        }    
+
         popStyle();
     }
 }
