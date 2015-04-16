@@ -1,6 +1,6 @@
-// KEY TODO: Get the spectrum visualizer working, so we can see what we're sending as signal
+// KEY TODO: Implement stream.mov
 
-// Longer-term TODO: Read source from interim save file with caret metadata, show the editing quasi-live
+// Longer-term TODO: Connect to editor with an IPC pipe, show editing live
 
 import ddf.minim.*;
 import ddf.minim.analysis.*; // for FFT
@@ -15,9 +15,9 @@ boolean displaySource = false;
 boolean displaySpectrum = false;
 boolean record = false;
 
-PFont srcFont, specFont;
+PFont srcFont; //, specFont;
 float srcFontSize = 12.;
-float specFontSize = 10.;
+//float specFontSize = 10.;
 
 String[] src, src0;
 int[] diffs;
@@ -45,8 +45,8 @@ void setup() {
     refresh(); // load shader and configuration, if any
     
     // For showing source and spectrum
-    srcFont = createFont( "fonts/InputSans-Regular", srcFontSize, true /*antialiasing*/ );
-    specFont = createFont( "fonts/InputSansNarrow-Regular", specFontSize, true );
+    srcFont = createFont( "fonts/InputSansNarrow-Regular", srcFontSize, true /*antialiasing*/ );
+    //specFont = createFont( "fonts/InputSansNarrow-Regular", specFontSize, true );
     textAlign( LEFT, TOP );
     noStroke();    
 }
@@ -79,13 +79,13 @@ void draw() {
     if ( displaySource ) {
         pushStyle();
                 
-        // Background scrim and text color
+        // Background scrim
         fill( 1., 1., 1., .67 );
         rect( 0, 0, width / 2, height );
-        fill( 0. ); // text color
         
         textFont( srcFont );
         textSize( srcFontSize );
+        fill( 0. ); // text color TODO
 
         int i, j;
         for ( i = 0; i < src.length && ! src[i].startsWith( "void main" ) ; ++i ) ;
@@ -113,6 +113,8 @@ void draw() {
         // "Recording" indicator
         if ( record ) {
             fill( 1., 0., 0., 1. );
+            rect( 0, height - 2. * srcFontSize, width / 2, 1.5 * srcFontSize );
+            fill( 1., 1., 1., 1. );
             text( String.format( "Recording: Frame %06d", frameCount ), srcFontSize * 1.5, height - 2. * srcFontSize );
         }
         
@@ -163,15 +165,17 @@ class ShaderPipe implements AudioListener {
     private float[] left, right;
 
     private FFT fft;
+    private int binOffset;
 
     ShaderPipe() {
         right = left = null;
 
         fft = new FFT( input.bufferSize(), input.sampleRate() );
-        fft.logAverages( int( input.sampleRate() ) <<5 /*minimum bandwidth*/, 1 /*bands per octave*/ );
-            // <<5 == /32 -- 5 bands total up to Nyquist frequency
-            // If sample rate == 44.1kHz, first four bands cover up to 11kHz
-            // We can tune this for greater sensitivity in the low range, i.e. drop minimum to <<6 or <<7
+        fft.logAverages( int( input.sampleRate() ) >>6 /*minimum bandwidth*/, 1 /*bands per octave*/ );
+            // >>6 == /64 -- 6 bins total up to Nyquist frequency, bin 0 goes up to 689Hz
+            // We can tune this for greater sensitivity in the low or high range, i.e. shift minimum between >>4 and >>9
+
+        binOffset = 0; // send the lowest four bins
     }
       
     synchronized void samples( float[] s ) {
@@ -188,13 +192,12 @@ class ShaderPipe implements AudioListener {
         
         if ( left != null ) {
             fft.forward( left );
-            shadr.set( "a", fft.getBand( 0 ), fft.getBand( 1 ), fft.getBand( 2 ), fft.getBand( 3 ) );
-        
+            shadr.set( "a", fft.getAvg( binOffset + 0 ), fft.getAvg( binOffset + 1 ), fft.getAvg( binOffset + 2 ), fft.getAvg( binOffset + 3 ) );
             // if right==null, i.e., mono signal, b gets the same values as a
             if ( right != null ) {
                 fft.forward( right );
             }
-            shadr.set( "b", fft.getBand( 0 ), fft.getBand( 1 ), fft.getBand( 2 ), fft.getBand( 3 ) );
+            shadr.set( "b", fft.getAvg( binOffset + 0 ), fft.getAvg( binOffset + 1 ), fft.getAvg( binOffset + 2 ), fft.getAvg( binOffset + 3 ) );
         }
         else {
             shadr.set( "a", 0., 0., 0., 0. );
@@ -205,30 +208,32 @@ class ShaderPipe implements AudioListener {
     synchronized void drawSpectrum() {
         pushStyle();
         
-        // Background scrim and text color
-        float hEdge = width - width / 2;
-        float vEdge = height - .25 * height;
+        float binWidth = 20.;
+        float gutter = 2.;
+        float hEdge = width - ( 2. * fft.avgSize() + 3. ) * ( binWidth + gutter );
+            // 2 channels + 1 left/right margin + 1 channel gutter
         
-        fill( 1., 1., 1., .5 );
-        rect( hEdge, vEdge, width - hEdge, height - vEdge );
+        float scale = 50.; // make the signal more visible
 
-        fill( 0. ); // text color TODO        
-        textFont( specFont );
-        textSize( specFontSize );
-        
-        // TODO running time
-        text( String.format( "%.1f KHz", input.sampleRate() / 1000. ), hEdge + 1.5 * specFontSize, vEdge + 1.5 * specFontSize );
+        // Background scrim
+        fill( 1., 1., 1., .67 );
+        rect( hEdge, 0, width - hEdge, height );
 
         if ( left != null ) {
             fft.forward( left );
-            for ( int i = 0; i < fft.specSize(); ++i ) {
-                // TODO DRAW THE SPECTRUM
+            for ( int i = 0; i < fft.avgSize(); ++i ) {
+                fill( i >= binOffset && i < binOffset + 4 ? 1. : 0., .33 ); // gray out bins not sent to the shader
+                rect(   hEdge + ( i + 1. ) * ( binWidth + gutter ), height - 1.5 * srcFontSize - fft.getAvg( i ) * scale,
+                        binWidth, fft.getAvg( i ) * scale );
             }
         }    
         if ( right != null ) {
             fft.forward( right );
-            for ( int i = 0; i < fft.specSize(); ++i ) {
-                // TODO DRAW THE SPECTRUM
+            hEdge += ( fft.avgSize() + 1. ) * ( binWidth + gutter );
+            for ( int i = 0; i < fft.avgSize(); ++i ) {
+                fill( i >= binOffset && i < binOffset + 4 ? 1. : 0., .33 ); // gray out bins not sent to the shader
+                rect(   hEdge + ( i + 1. ) * ( binWidth + gutter ), height - 1.5 * srcFontSize - fft.getAvg( i ) * scale,
+                        binWidth, fft.getAvg( i ) * scale );
             }
         }    
 
