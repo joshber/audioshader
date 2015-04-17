@@ -1,9 +1,11 @@
-// KEY TODO: Implement stream.mov
+// KEY TODO: indicate stream in shader?
 
 // Longer-term TODO: Connect to editor with an IPC pipe, show editing live
 
 import ddf.minim.*;
 import ddf.minim.analysis.*; // for FFT
+
+import java.util.Scanner; // to get configuration from shader file
 
 Minim minim;
 AudioInput input;
@@ -15,12 +17,13 @@ boolean displaySource = false;
 boolean displaySpectrum = false;
 boolean record = false;
 
-PFont srcFont; //, specFont;
-float srcFontSize = 12.;
-//float specFontSize = 10.;
+PFont srcFont;
+float srcFontSize = 14.;
 
 String[] src, src0;
 int[] diffs;
+int diffsFadeFrames = 600; // # frames to mark diff lines
+float srcScrimWidth = .618;
 
 final String shaderPath = "shader/shader.glsl";
 
@@ -45,10 +48,10 @@ void setup() {
     refresh(); // load shader and configuration, if any
     
     // For showing source and spectrum
-    srcFont = createFont( "fonts/InputSansNarrow-Regular", srcFontSize, true /*antialiasing*/ );
-    //specFont = createFont( "fonts/InputSansNarrow-Regular", specFontSize, true );
+    srcFont = createFont( "fonts/InputSansCondensed-Medium.ttf", srcFontSize, true /*antialiasing*/ );
     textAlign( LEFT, TOP );
-    noStroke();    
+    noStroke();
+    srcScrimWidth *= width;
 }
     
 void draw() {
@@ -58,9 +61,7 @@ void draw() {
     if ( frameCount % 30 == 0 )
         refresh();
     
-    // float() bc GLSL < 3.0 can't do modulo on int
-    shadr.set( "t", float( millis() ) );
-    shadr.set( "f", float( frameCount ) );
+    shadr.set( "t", float( millis() ) ); // float() bc GLSL < 3.0 can't do modulo on int
 
     pipe.passthru(); // pass the signal
 
@@ -80,12 +81,12 @@ void draw() {
         pushStyle();
                 
         // Background scrim
-        fill( 1., 1., 1., .67 );
-        rect( 0, 0, width / 2, height );
+        fill( 1., 1., 1., .33 );
+        rect( 0., 0., srcScrimWidth, height );
         
         textFont( srcFont );
         textSize( srcFontSize );
-        fill( 0. ); // text color TODO
+        fill( 1., .67 ); // text color TODO
 
         int i, j;
         for ( i = 0; i < src.length && ! src[i].startsWith( "void main" ) ; ++i ) ;
@@ -95,14 +96,13 @@ void draw() {
             // if corresponding lines of the shader file, counting from start of main(),
             // differ between current source and diffs baseline, reset the diffs counter for this line
             if ( i < diffs.length && ! src[i].equals( src0[j++] ) ) {
-                diffs[i] = 1800; // 1800 frames == c.30s
+                diffs[i] = diffsFadeFrames;
             }
-            // diffs highlighting fades over 1800 frames (c.30s) from most recent diff on this line
+            // diffs highlighting fades over diffsFadeFrames from most recent diff on this line
             if ( diffs[i] > 0 ) {
-                //println( String.format( "%02d %04d", i, diffs[i] ) ); 
                 pushStyle();
-                fill( 1., 1., 1., .33 / 1800. * diffs[i] );
-                rect( 0, 1.5 * k * srcFontSize, width / 2, 1.5 * srcFontSize );
+                fill( 1., 1., 0., .8 / diffsFadeFrames * diffs[i] );
+                rect( 0, 1.5 * k * srcFontSize, srcScrimWidth, 1.5 * srcFontSize );
                 popStyle();                
                 --diffs[i];
             }
@@ -113,7 +113,7 @@ void draw() {
         // "Recording" indicator
         if ( record ) {
             fill( 1., 0., 0., 1. );
-            rect( 0, height - 2. * srcFontSize, width / 2, 1.5 * srcFontSize );
+            rect( 0, height - 2. * srcFontSize, srcScrimWidth, 1.5 * srcFontSize );
             fill( 1., 1., 1., 1. );
             text( String.format( "Recording: Frame %06d", frameCount ), srcFontSize * 1.5, height - 2. * srcFontSize );
         }
@@ -130,13 +130,22 @@ void draw() {
 }
 
 // comparing last-modified dates using Java Nio proved gross,
-// so we simply reload and re-baseline diffs every so many frames
+// so we simply reload and re-baseline diffs twice a second
 void refresh() {
     shadr = loadShader( shaderPath );
     
-    shadr.set( "resolution", float( width ), float( height ) );
+    shadr.set( "res", float( width ), float( height ) );
         
     src0 = src; // update diffs baseline
+
+    // if last line of shader starts with //fft n n,
+    // update the FFT averaging accordingly
+    if ( src0[src0.length - 1].startsWith( "//fft" ) ) {
+        Scanner s = new Scanner( src0[src0.length - 1] );
+        int nBins = s.nextInt();
+        int offset = s.nextInt();
+        pipe.updateAveraging( nBins, offset );
+    }
 }
 
 void stop() {
@@ -177,7 +186,12 @@ class ShaderPipe implements AudioListener {
 
         binOffset = 0; // send the lowest four bins
     }
-      
+    
+    void updateAveraging( int nBins, int offset ) {
+        fft.logAverages( int( input.sampleRate() ) >> nBins, 1 );
+        binOffset = offset;
+    }
+    
     synchronized void samples( float[] s ) {
         left = s;
     }
@@ -208,21 +222,19 @@ class ShaderPipe implements AudioListener {
     synchronized void drawSpectrum() {
         pushStyle();
         
-        float binWidth = 20.;
+        float binWidth = 10.;
         float gutter = 2.;
         float hEdge = width - ( 2. * fft.avgSize() + 3. ) * ( binWidth + gutter );
             // 2 channels + 1 left/right margin + 1 channel gutter
         
         float scale = 50.; // make the signal more visible
 
-        // Background scrim
-        fill( 1., 1., 1., .67 );
-        rect( hEdge, 0, width - hEdge, height );
+        // Background scrim: looks better without
 
         if ( left != null ) {
             fft.forward( left );
             for ( int i = 0; i < fft.avgSize(); ++i ) {
-                fill( i >= binOffset && i < binOffset + 4 ? 1. : 0., .33 ); // gray out bins not sent to the shader
+                fill( 1., .2, 0., i >= binOffset && i < binOffset + 4 ? 1. : .5 ); // alpha out bins not sent to the shader
                 rect(   hEdge + ( i + 1. ) * ( binWidth + gutter ), height - 1.5 * srcFontSize - fft.getAvg( i ) * scale,
                         binWidth, fft.getAvg( i ) * scale );
             }
@@ -231,7 +243,7 @@ class ShaderPipe implements AudioListener {
             fft.forward( right );
             hEdge += ( fft.avgSize() + 1. ) * ( binWidth + gutter );
             for ( int i = 0; i < fft.avgSize(); ++i ) {
-                fill( i >= binOffset && i < binOffset + 4 ? 1. : 0., .33 ); // gray out bins not sent to the shader
+                fill( 1., .2, 0., i >= binOffset && i < binOffset + 4 ? 1. : .5 ); // alpha out bins not sent to the shader
                 rect(   hEdge + ( i + 1. ) * ( binWidth + gutter ), height - 1.5 * srcFontSize - fft.getAvg( i ) * scale,
                         binWidth, fft.getAvg( i ) * scale );
             }
