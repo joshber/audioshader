@@ -40,3 +40,4 @@ uv.s +=   /*mod( */sin(/* i  * */ 1./res.t * -.5 * PI * t  + pow( uv.t, 10. /*1.
     c =  1. - c;
     gl_FragColor = vec4( c - uv0.s, c - uv0.t, c, 1. ) ;
 }
+// fft 7 2 nbins, offset -- only active when //fft with no space

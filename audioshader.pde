@@ -137,15 +137,19 @@ void refresh() {
     shadr.set( "res", float( width ), float( height ) );
         
     src0 = src; // update diffs baseline
+    src = loadStrings( shaderPath );
 
     // if last line of shader starts with //fft n n,
     // update the FFT averaging accordingly
-    if ( src0[src0.length - 1].startsWith( "//fft" ) ) {
-        Scanner s = new Scanner( src0[src0.length - 1] );
+    if ( src[src.length - 1].startsWith( "//fft" ) ) {
+        Scanner s = new Scanner( src[src.length - 1] );
+        s.next();
         int nBins = s.nextInt();
         int offset = s.nextInt();
         pipe.updateAveraging( nBins, offset );
     }
+    else
+        pipe.resetAveraging();
 }
 
 void stop() {
@@ -180,16 +184,19 @@ class ShaderPipe implements AudioListener {
         right = left = null;
 
         fft = new FFT( input.bufferSize(), input.sampleRate() );
-        fft.logAverages( int( input.sampleRate() ) >>6 /*minimum bandwidth*/, 1 /*bands per octave*/ );
-            // >>6 == /64 -- 6 bins total up to Nyquist frequency, bin 0 goes up to 689Hz
-            // We can tune this for greater sensitivity in the low or high range, i.e. shift minimum between >>4 and >>9
-
-        binOffset = 0; // send the lowest four bins
+        resetAveraging();
     }
     
     void updateAveraging( int nBins, int offset ) {
         fft.logAverages( int( input.sampleRate() ) >> nBins, 1 );
         binOffset = offset;
+    }
+    void resetAveraging() {
+        fft.logAverages( int( input.sampleRate() ) >>6 /*minimum bandwidth*/, 1 /*bands per octave*/ );
+            // >>6 == /64 -- 6 bins total up to Nyquist frequency, bin 0 goes up to 689Hz
+            // We can tune this for greater sensitivity in the low or high range, i.e. shift minimum between >>4 and >>9
+
+        binOffset = 0; // send the lowest four bins
     }
     
     synchronized void samples( float[] s ) {
