@@ -1,5 +1,3 @@
-// KEY TODO: indicate stream in shader?
-
 // Longer-term TODO: Connect to editor with an IPC pipe, show editing live
 
 import ddf.minim.*;
@@ -18,12 +16,12 @@ boolean displaySpectrum = false;
 boolean record = false;
 
 PFont srcFont;
-float srcFontSize = 14.;
+float srcFontSize = 12.;
 
 String[] src, src0;
 int[] diffs;
-int diffsFadeFrames = 600; // # frames to mark diff lines
-float srcScrimWidth = 1.//.618;
+int diffsFadeFrames = 300; // # frames to mark diff lines
+float srcScrimWidth = 1.;
 
 final String shaderPath = "shader/shader.glsl";
 
@@ -71,9 +69,6 @@ void draw() {
 
     resetShader();
     
-    if ( displaySpectrum )
-        pipe.drawSpectrum();
-
     if ( displaySource || record )
         src = loadStrings( "shader/shader.glsl" );
 
@@ -86,7 +81,7 @@ void draw() {
         
         textFont( srcFont );
         textSize( srcFontSize );
-        fill( 1., .67 ); // text color TODO
+        fill( 1., .67 ); // text color
 
         int i, j;
         for ( i = 0; i < src.length && ! src[i].startsWith( "void main" ) ; ++i ) ;
@@ -109,23 +104,23 @@ void draw() {
             
             text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
         }
-
-        // "Recording" indicator
-        if ( record ) {
-            fill( 1., 0., 0., 1. );
-            rect( 0, height - 2. * srcFontSize, srcScrimWidth, 1.5 * srcFontSize );
-            fill( 1., 1., 1., 1. );
-            text( String.format( "Recording: Frame %06d", frameCount ), srcFontSize * 1.5, height - 2. * srcFontSize );
-        }
         
         popStyle();
     }
+    
+    if ( displaySpectrum )
+        pipe.drawSpectrum();
 
     // Save the frame and the shader (no synchronization, always a chance of slippage)
     if ( record ) {
         String path = String.format( "data/out/%04d-%02d-%02d/", year(), month(), day() );
         saveFrame( path + "frames/######.jpg" );
         saveStrings( path + String.format( "shaders/%06d.glsl", frameCount ), src );
+        
+        pushStyle();
+        fill( 1., 0., 0., 1. );
+        rect( 0, height - 2., width, 2. );
+        popStyle();
     }
 }
 
@@ -193,7 +188,7 @@ class ShaderPipe implements AudioListener {
     }
     void resetAveraging() {
         fft.logAverages( int( input.sampleRate() ) >>6 /*minimum bandwidth*/, 1 /*bands per octave*/ );
-            // >>6 == /64 -- 6 bins total up to Nyquist frequency, bin 0 goes up to 689Hz
+            // >>6 == /64 -- 6 bins total up to Nyquist frequency, at 44.1KHz sampling bin 0 goes up to 689Hz
             // We can tune this for greater sensitivity in the low or high range, i.e. shift minimum between >>4 and >>9
 
         binOffset = 0; // send the lowest four bins
@@ -209,7 +204,6 @@ class ShaderPipe implements AudioListener {
     
     synchronized void passthru() {
         // Two uniform vec4 -- a for left, b for right
-        // TODO scale a, b to [0,1]
         
         if ( left != null ) {
             fft.forward( left );
