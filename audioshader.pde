@@ -23,7 +23,7 @@ float srcFontSize = 14.;
 String[] src, src0;
 int[] diffs;
 int diffsFadeFrames = 600; // # frames to mark diff lines
-float srcScrimWidth = .618;
+float srcScrimWidth = 1.//.618;
 
 final String shaderPath = "shader/shader.glsl";
 
@@ -95,16 +95,16 @@ void draw() {
         for ( int k = 1 ; i < src.length && 1.5 * ( k + 2 ) < height ; ++i, ++k ) {
             // if corresponding lines of the shader file, counting from start of main(),
             // differ between current source and diffs baseline, reset the diffs counter for this line
-            if ( i < diffs.length && ! src[i].equals( src0[j++] ) ) {
-                diffs[i] = diffsFadeFrames;
+            if ( k < diffs.length && ! src[i].equals( src0[j++] ) ) {
+                diffs[k] = diffsFadeFrames;
             }
             // diffs highlighting fades over diffsFadeFrames from most recent diff on this line
-            if ( diffs[i] > 0 ) {
+            if ( diffs[k] > 0 ) {
                 pushStyle();
-                fill( 1., 1., 0., .8 / diffsFadeFrames * diffs[i] );
+                fill( 1., 1., 0., .8 / diffsFadeFrames * diffs[k] );
                 rect( 0, 1.5 * k * srcFontSize, srcScrimWidth, 1.5 * srcFontSize );
                 popStyle();                
-                --diffs[i];
+                --diffs[k];
             }
             
             text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
