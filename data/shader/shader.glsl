@@ -11,12 +11,11 @@ uniform vec2 res; // viewport dimensions in pixels
 uniform float t; // time, milliseconds
 uniform vec4 a, b; // log-binned signal, left and right
 
-
 // *** Simplex noise ***
+// (utility fns for all 3 versions moved to top, duplicates cut)
+
 //
-// *** 2D ***
-//
-// Description : Array and textureless GLSL 2D simplex noise function.
+// Description : Array and textureless GLSL 2D/3D/4D simplex noise function.
 //      Author : Ian McEwan, Ashima Arts.
 //  Maintainer : ijm
 //     Lastmod : 20110822 (ijm)
@@ -25,7 +24,10 @@ uniform vec4 a, b; // log-binned signal, left and right
 //               https://github.com/ashima/webgl-noise
 // 
 
-vec3 mod289(vec3 x) {
+// (sqrt(5) - 1)/4 = F4, used once below
+#define F4 0.309016994374947451
+
+float mod289(float x) {
   return x - floor(x * (1.0 / 289.0)) * 289.0;
 }
 
@@ -33,12 +35,47 @@ vec2 mod289(vec2 x) {
   return x - floor(x * (1.0 / 289.0)) * 289.0;
 }
 
+vec3 mod289(vec3 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec4 mod289(vec4 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+float permute(float x) {
+     return mod289(((x*34.0)+1.0)*x);
+}
+
 vec3 permute(vec3 x) {
   return mod289(((x*34.0)+1.0)*x);
 }
 
-float snoise(vec2 v)
-  {
+vec4 permute(vec4 x) {
+     return mod289(((x*34.0)+1.0)*x);
+}
+
+float taylorInvSqrt(float r) {
+  return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+vec4 taylorInvSqrt(vec4 r) {
+  return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+vec4 grad4(float j, vec4 ip) {
+  const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
+  vec4 p,s;
+
+  p.xyz = floor( fract (vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
+  p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+  s = vec4(lessThan(p, vec4(0.0)));
+  p.xyz = p.xyz + (s.xyz*2.0 - 1.0) * s.www; 
+
+  return p;
+}
+
+float noise(vec2 v) {
   const vec4 C = vec4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
                       0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
                      -0.577350269189626,  // -1.0 + 2.0 * C.x
@@ -86,37 +123,7 @@ float snoise(vec2 v)
   return 130.0 * dot(m, g);
 }
 
-// *** 3D ***
-//
-// Description : Array and textureless GLSL 2D/3D/4D simplex 
-//               noise functions.
-//      Author : Ian McEwan, Ashima Arts.
-//  Maintainer : ijm
-//     Lastmod : 20110822 (ijm)
-//     License : Copyright (C) 2011 Ashima Arts. All rights reserved.
-//               Distributed under the MIT License. See LICENSE file.
-//               https://github.com/ashima/webgl-noise
-// 
-
-vec3 mod289(vec3 x) {
-  return x - floor(x * (1.0 / 289.0)) * 289.0;
-}
-
-vec4 mod289(vec4 x) {
-  return x - floor(x * (1.0 / 289.0)) * 289.0;
-}
-
-vec4 permute(vec4 x) {
-     return mod289(((x*34.0)+1.0)*x);
-}
-
-vec4 taylorInvSqrt(vec4 r)
-{
-  return 1.79284291400159 - 0.85373472095314 * r;
-}
-
-float snoise(vec3 v)
-  { 
+float noise(vec3 v) { 
   const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
   const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
 
@@ -188,62 +195,9 @@ float snoise(vec3 v)
   m = m * m;
   return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
                                 dot(p2,x2), dot(p3,x3) ) );
-  }
-
-// *** 4D ***
-//
-// Description : Array and textureless GLSL 2D/3D/4D simplex 
-//               noise functions.
-//      Author : Ian McEwan, Ashima Arts.
-//  Maintainer : ijm
-//     Lastmod : 20110822 (ijm)
-//     License : Copyright (C) 2011 Ashima Arts. All rights reserved.
-//               Distributed under the MIT License. See LICENSE file.
-//               https://github.com/ashima/webgl-noise
-// 
-
-vec4 mod289(vec4 x) {
-  return x - floor(x * (1.0 / 289.0)) * 289.0; }
-
-float mod289(float x) {
-  return x - floor(x * (1.0 / 289.0)) * 289.0; }
-
-vec4 permute(vec4 x) {
-     return mod289(((x*34.0)+1.0)*x);
 }
 
-float permute(float x) {
-     return mod289(((x*34.0)+1.0)*x);
-}
-
-vec4 taylorInvSqrt(vec4 r)
-{
-  return 1.79284291400159 - 0.85373472095314 * r;
-}
-
-float taylorInvSqrt(float r)
-{
-  return 1.79284291400159 - 0.85373472095314 * r;
-}
-
-vec4 grad4(float j, vec4 ip)
-  {
-  const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
-  vec4 p,s;
-
-  p.xyz = floor( fract (vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
-  p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
-  s = vec4(lessThan(p, vec4(0.0)));
-  p.xyz = p.xyz + (s.xyz*2.0 - 1.0) * s.www; 
-
-  return p;
-  }
-						
-// (sqrt(5) - 1)/4 = F4, used once below
-#define F4 0.309016994374947451
-
-float snoise(vec4 v)
-  {
+float noise(vec4 v) {
   const vec4  C = vec4( 0.138196601125011,  // (5 - sqrt(5))/20  G4
                         0.276393202250021,  // 2 * G4
                         0.414589803375032,  // 3 * G4
@@ -318,32 +272,43 @@ float snoise(vec4 v)
   return 49.0 * ( dot(m0*m0, vec3( dot( p0, x0 ), dot( p1, x1 ), dot( p2, x2 )))
                + dot(m1*m1, vec2( dot( p3, x3 ), dot( p4, x4 ) ) ) ) ;
 
-  }
+}
+
+// *** End noise ***
 
 
 
 void main( void ) {
-    vec2 uv0 = vec2( gl_FragCoord.x / res.x, 1. - ( gl_FragCoord.y / res.y ) ); // invert y-axis for Processing
+    vec2 uv = gl_FragCoord.xy / res;
 
-    vec2 uv = 2. * uv0 - 1.; // [-1,1]
+    //vec2 uv = vec2( gl_FragCoord.x / res.x, 1. - ( gl_FragCoord.y / res.y ) );
+    vec2 p = 2. * uv - 1.; // [-1,1]
 
+    float r = length(p);
+    //p = atan(p);
+    
     float c = 0.;
 
-    //uv.y += abs( sin( 1./res.x * -1.1 * PI * t  + pow( uv.x, 2. ) + uv.x ) );
-    uv.x += abs( sin( 1./res.y * .1 * PI * t  + pow( uv.y, 20. ) + uv.y ) );
+    p.y += sin( 1. / res.x * t * PI - pow( p.x, 20. ) - p.x );
+    //p.x += sin( 1. / res.y * t * PI + pow( p.y, 2. ) + p.y );
+    //p.y = abs( sin( 1./res.x  * PI * t /*pow( p.x, 20. )*/ + p.x ) );
+    //p.x = abs( sin( 1./res.y * PI * t  + pow( p.y, 20. ) + p.y ) );
 
-    uv.y += -1. * snoise( b );
-    uv.x += 1. * snoise( a );
-    
-    c = abs(1./uv.x) * .1 * b.x;
-    //c = abs(1./uv.y) * .1 * b.z;
 
-    c += snoise( a );
-    c =  1. - c;
+    //p.y = sin( 1. / res.x * -PI * t + pow( p.x, 10. ) + p.x );
+    //p.x = sin( 1. / res.y * -.1 * PI * t + pow( p.y, 10. ) + p.y );
+
+    //p.x += abs( sin( 1. / res.y * .1 * PI * t + pow( p.y, 20. ) + p.y ) );
+
+    c = abs( 1./p.x ) * .1 * b.x;
+    c = abs( 1./p.y ) * b.x;
+
+    //c += noise( a );
+    c = 1. - 1. / c;
     
-    if ( uv.y < 0. ) c = clamp( 1. - snoise( uv * t ), 0., .3 );
-    //if ( uv.x > .5 ) c += snoise( uv * t );
+    //if ( uv.y < .5 /*sin( t )*/ ) c = clamp( noise( a * t ), 0., .5 );
+    /*if ( uv.x > .5 )*/ c += .1 * noise( p /* t*/ );
     
-    gl_FragColor = vec4( c - uv0.x, c - uv0.y, c, 1. ) ;
+    gl_FragColor = vec4( c - uv.x, c - uv.y, c, 1. ) ;
 }
-// fft 7 3 nbins, offset -- only active when //fft with no space
+// fft- 7 3

@@ -1,9 +1,13 @@
+// TODO: Move all controls into shader -- regex last line -- fft, nocode, nospec, record <label>
+
 // Longer-term TODO: Connect to editor with an IPC pipe, show editing live
 
 import ddf.minim.*;
 import ddf.minim.analysis.*; // for FFT
 
-import java.util.Scanner; // to get configuration from shader file
+// To get configuration and UI parameters from the shader source
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 Minim minim;
 AudioInput input;
@@ -11,9 +15,10 @@ ShaderPipe pipe;
 
 PShader shadr;
 
-boolean displaySource = false;
-boolean displaySpectrum = false;
+boolean displaySource = true;
+boolean displaySpectrum = true;
 boolean record = false;
+String recordLabel;
 
 PFont srcFont;
 float srcFontSize = 12.;
@@ -25,6 +30,9 @@ float srcScrimWidth = 1.;
 
 final String shaderPath = "shader/shader.glsl";
 
+boolean sketchFullScreen() {
+    return false;
+}
 
 void setup() {
     size( 1280, 720, P2D );
@@ -46,7 +54,7 @@ void setup() {
     refresh(); // load shader and configuration, if any
     
     // For showing source and spectrum
-    srcFont = createFont( "fonts/InputSansCondensed-Medium.ttf", srcFontSize, true /*antialiasing*/ );
+    srcFont = createFont( "fonts/InputSansCondensed-Black.ttf", srcFontSize, true /*antialiasing*/ );
     textAlign( LEFT, TOP );
     noStroke();
     srcScrimWidth *= width;
@@ -75,13 +83,10 @@ void draw() {
     if ( displaySource ) {
         pushStyle();
                 
-        // Background scrim
-        fill( 1., 1., 1., .33 );
-        rect( 0., 0., srcScrimWidth, height );
+        // No background scrim: looks better without
         
         textFont( srcFont );
         textSize( srcFontSize );
-        fill( 1., .67 ); // text color
 
         int i, j;
         for ( i = 0; i < src.length && ! src[i].startsWith( "void main" ) ; ++i ) ;
@@ -102,6 +107,13 @@ void draw() {
                 --diffs[k];
             }
             
+            // Drop shadow
+            translate( 1., 1. );
+            fill( 0., .5 );
+            text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
+            translate( -1., -1. );
+
+            fill( 1., 1. ); // text color
             text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
         }
         
@@ -113,7 +125,7 @@ void draw() {
 
     // Save the frame and the shader (no synchronization, always a chance of slippage)
     if ( record ) {
-        String path = String.format( "data/out/%04d-%02d-%02d/", year(), month(), day() );
+        String path = String.format( "data/out/%s/%04d-%02d-%02d/", recordLabel, year(), month(), day() );
         saveFrame( path + "frames/######.jpg" );
         saveStrings( path + String.format( "shaders/%06d.glsl", frameCount ), src );
         
@@ -134,17 +146,42 @@ void refresh() {
     src0 = src; // update diffs baseline
     src = loadStrings( shaderPath );
 
-    // if last line of shader starts with //fft n n,
-    // update the FFT averaging accordingly
-    if ( src[src.length - 1].startsWith( "//fft" ) ) {
-        Scanner s = new Scanner( src[src.length - 1] );
-        s.next();
-        int nBins = s.nextInt();
-        int offset = s.nextInt();
-        pipe.updateAveraging( nBins, offset );
+    //
+    // Check last line of source for configuration and UI parameters
+    // ::sigh:: to think how concise this would be in Perl ...
+
+    final Pattern dyRange = Pattern.compile( "fft (\\d){1,2} (\\d){1,2}" ); // fft n n
+    final Pattern concealSource = Pattern.compile( "-source" );
+    final Pattern concealSpectrum = Pattern.compile( "-spec" );
+    final Pattern rec = Pattern.compile( "record ([^\\s]+)" );
+    
+    String config = src[src.length - 1];
+    Matcher m;
+    
+    // fft <# bins> <offset>
+    m = dyRange.matcher( config );
+    if ( m.find() ) {
+        pipe.updateAveraging( int( m.group( 1 ) ), int( m.group( 2 ) ) );
     }
     else
         pipe.resetAveraging();
+
+    // -source
+    m = concealSource.matcher( config );
+    displaySource = m.find() ? false : true;
+    
+    // -spec
+    m = concealSpectrum.matcher( config );
+    displaySpectrum = m.find() ? false : true;
+    
+    // record <label>
+    m = rec.matcher( config );
+    if ( m.find() ) {
+        record = true;
+        recordLabel = m.group( 1 );
+    }
+    else
+        record = false;
 }
 
 void stop() {
@@ -152,21 +189,6 @@ void stop() {
     minim.stop();
     
     super.stop();
-}
-
-void keyPressed() {
-    if ( key == 's' || key == 'S' ) {
-        displaySource = displaySource ? false : true;
-    }
-    else if ( key == '%' ) {
-        displaySpectrum = displaySpectrum ? false : true;
-    }
-    else if ( key == '*' ) {
-        record = record ? false : true;
-    }
-    else if ( key == 'r' || key == 'R' ) {
-        refresh();
-    }
 }
 
 class ShaderPipe implements AudioListener {
