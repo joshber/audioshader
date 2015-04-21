@@ -5,7 +5,7 @@ precision mediump int;
 
 #define PROCESSING_COLOR_SHADER
 
-const float PI = 3.14159265358979323846264;
+const float PI = 3.14159265359;
 
 uniform vec2 res; // viewport dimensions in pixels
 uniform float t; // time, milliseconds
@@ -284,7 +284,7 @@ void main( void ) {
     //vec2 uv = vec2( gl_FragCoord.x / res.x, 1. - ( gl_FragCoord.y / res.y ) );
     vec2 p = 2. * uv - 1.; // [-1,1]
 
-    float phi = atan( p.y, p.x );
+    float phi = atan( p.y / p.x );
 
     float r = length(p);
     p = atan(p) * r;
@@ -303,15 +303,14 @@ void main( void ) {
     //p.x += abs( sin( 1. / res.y * .1 * PI * t + pow( p.y, 20. ) + p.y ) );
 
   //  c = abs( 1./p.x ) * .1 * b.x;
-    //c = abs( 1./p.y ) * /*b.w /*/ b.x * sin( phi - .001 * t * r );
-    c = a.z * b.y + sin( phi + /*.01 * */ t * r * b.x ) ;
+    c = abs( 1./p.y ) * /*b.w /*/ b.x * sin( phi * .01 * t + r );
 
-    c += noise( a );
-    c = 1. - c;
+    //c += noise( a );
+    c = 1. - c ;//1. / c;
     
     //if ( uv.y < .5 /*sin( t )*/ ) c = clamp( noise( a * t ), 0., .5 );
     ///*if ( uv.x > .5 )*/ c += .1 * noise( p /* t*/ );
     
     gl_FragColor = vec4( c - uv.x, c - uv.y, c, 1. ) ;
 }
-// fft 7 3 
+// fft 7 3

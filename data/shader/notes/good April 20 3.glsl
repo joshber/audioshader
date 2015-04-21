@@ -5,7 +5,7 @@ precision mediump int;
 
 #define PROCESSING_COLOR_SHADER
 
-const float PI = 3.14159265358979323846264;
+const float PI = 3.14159265359;
 
 uniform vec2 res; // viewport dimensions in pixels
 uniform float t; // time, milliseconds
@@ -304,9 +304,9 @@ void main( void ) {
 
   //  c = abs( 1./p.x ) * .1 * b.x;
     //c = abs( 1./p.y ) * /*b.w /*/ b.x * sin( phi - .001 * t * r );
-    c = a.z * b.y + sin( phi + /*.01 * */ t * r * b.x ) ;
+    c = a.x * b.y + sin( phi - .01 * t * r - b.y ) ;
 
-    c += noise( a );
+    //c += noise( a );
     c = 1. - c;
     
     //if ( uv.y < .5 /*sin( t )*/ ) c = clamp( noise( a * t ), 0., .5 );
@@ -314,4 +314,4 @@ void main( void ) {
     
     gl_FragColor = vec4( c - uv.x, c - uv.y, c, 1. ) ;
 }
-// fft 7 3 
+// fft 7 3

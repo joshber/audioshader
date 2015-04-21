@@ -1,6 +1,6 @@
-// TODO: Move all controls into shader -- regex last line -- fft, nocode, nospec, record <label>
+// TODO: Record the signal (as fft) along with frame and source?
 
-// Longer-term TODO: Connect to editor with an IPC pipe, show editing live
+// Longer-term TODO: Connect to editor with an IPC pipe, show editing live -- or embed an editor?
 
 import ddf.minim.*;
 import ddf.minim.analysis.*; // for FFT
@@ -26,7 +26,6 @@ float srcFontSize = 12.;
 String[] src, src0;
 int[] diffs;
 int diffsFadeFrames = 300; // # frames to mark diff lines
-float srcScrimWidth = 1.;
 
 final String shaderPath = "shader/shader.glsl";
 
@@ -57,7 +56,6 @@ void setup() {
     srcFont = createFont( "fonts/InputSansCondensed-Black.ttf", srcFontSize, true /*antialiasing*/ );
     textAlign( LEFT, TOP );
     noStroke();
-    srcScrimWidth *= width;
 }
     
 void draw() {
@@ -102,7 +100,7 @@ void draw() {
             if ( diffs[k] > 0 ) {
                 pushStyle();
                 fill( 1., 1., 0., .8 / diffsFadeFrames * diffs[k] );
-                rect( 0, 1.5 * k * srcFontSize, srcScrimWidth, 1.5 * srcFontSize );
+                rect( 0, 1.5 * k * srcFontSize, width, 1.5 * srcFontSize );
                 popStyle();                
                 --diffs[k];
             }
@@ -115,6 +113,15 @@ void draw() {
 
             fill( 1., 1. ); // text color
             text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
+            
+            // Show the recording indicator across the bottom
+            // Goes here so we can record with no UI artifact by concealing source
+            if ( record ) {
+                pushStyle();
+                fill( 1., 0., 0., 1. );
+                rect( 0, height - 1., width, 2. );
+                popStyle();
+            }
         }
         
         popStyle();
@@ -128,11 +135,6 @@ void draw() {
         String path = String.format( "data/out/%s/%04d-%02d-%02d/", recordLabel, year(), month(), day() );
         saveFrame( path + "frames/######.jpg" );
         saveStrings( path + String.format( "shaders/%06d.glsl", frameCount ), src );
-        
-        pushStyle();
-        fill( 1., 0., 0., 1. );
-        rect( 0, height - 2., width, 2. );
-        popStyle();
     }
 }
 
