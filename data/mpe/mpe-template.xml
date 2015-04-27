@@ -1,0 +1,28 @@
+<!--
+    two HD displays yoked togther in a single 2·-wide viewport, running from separate hosts
+    *sigh* they couldn't update this to allow configuration files in JSON?
+    https://github.com/shiffman/Most-Pixels-Ever-Processing/wiki/Processing-Tutorial
+-->
+<settings>
+    <id>0</id>
+    <name>display0</name>
+    <server>
+        <ip>localhost</ip>
+        <port>9002</port>
+    </server>
+    <local_dimensions><!-- 2560·1440 for Quad HD -->
+        <width>1920</width>
+        <height>1080</height>
+    </local_dimensions>
+    <local_location>
+        <x>0</x><!-- for display1 this'd be 1920 or 2560 -->
+        <y>0</y>
+    </local_location>
+    <master_dimensions>
+        <width>3840</width>
+        <height>1080</height>
+    </master_dimensions>
+    <offset_window>true</offset_window>
+    <verbose>false</verbose>
+    <simulation fps="30">false</simulation>
+</settings>

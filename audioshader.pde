@@ -1,13 +1,20 @@
-// TODO: Record the signal (as fft) along with frame and source?
+// TODO
+// - Integrate Most Pixels Ever
+// https://github.com/shiffman/Most-Pixels-Ever-Processing/wiki
 
-// Longer-term TODO: Connect to editor with an IPC pipe, show editing live -- or embed an editor?
+// Most Pixels Ever -- treat multiple displays as a single viewport
+// https://github.com/shiffman/Most-Pixels-Ever-Processing/wiki/Processing-Tutorial
+import mpe.client.*;
 
+// Audio sampling
 import ddf.minim.*;
 import ddf.minim.analysis.*; // for FFT
 
 // To get configuration and UI parameters from the shader source
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+
+TCPClient mpeSub;
 
 Minim minim;
 AudioInput input;
@@ -33,7 +40,70 @@ boolean sketchFullScreen() {
     return false;
 }
 
+/*
+ * MPE version
+ *
+TODO for multiple-host version:
+- Designate one host the listener, have it distribute FFT to the others
+- Tweak frame rate and source diffs fade rate
+- Subsitute mpeSub.getMWidth() and getMHeight() for width and height -- see wrapper fns below
+
+// Supercedes setup() under Most Pixels Ever
+// -- called whenever a new subscriber connects
+public void resetEvent( TCPClient sub ) {
+    frameRate( 60 );
+    colorMode( RGB, 1.0 );
+
+    // Set up audio listener
+    minim = new Minim( this );
+    input = minim.getLineIn();
+    pipe = new ShaderPipe();
+    input.addListener( pipe );
+    
+    // For highlighting source diffs
+    src = loadStrings( shaderPath );
+    diffs = new int[200];
+    for ( int i = 0; i < 200; ++i )
+        diffs[i] = 0;
+        
+    refresh(); // load shader and configuration, if any
+    
+    // For showing source and spectrum
+    srcFont = createFont( "fonts/InputSansCondensed-Black.ttf", srcFontSize, true ); // true==antialiasing
+    textAlign( LEFT, TOP );
+    noStroke();
+
+}
+
+// Supercedes draw() under Most Pixels Ever
+// -- called whenever the subscriber receives a "Draw next frame" message from the server
+void frameEvent( TCPClient sub ) {
+    // draw() stuff here
+}
+*/
+
+// Wrappers to facilitate switching to multiple-hosts version
+int getWidth() {
+    return width;
+    //return mpeSub.getMWidth();
+}
+int getHeight() {
+    return height;
+    //return mpeSub.getMHeight();
+}
+
 void setup() {
+/*
+    // Set up Most Pixels Ever
+    mpeSub = new TCPClient( this, "mpe/mpe.xml" );
+    
+    // Local display dimensions
+    size( mpeSub.getLWidth(), mpeSub.getLHeight() );
+    
+    resetEvent( mpeSub );
+    mpeSub.start();
+*/
+
     size( 1280, 720, P2D );
     frameRate( 60 );
     colorMode( RGB, 1.0 );
@@ -53,11 +123,11 @@ void setup() {
     refresh(); // load shader and configuration, if any
     
     // For showing source and spectrum
-    srcFont = createFont( "fonts/InputSansCondensed-Black.ttf", srcFontSize, true /*antialiasing*/ );
+    srcFont = createFont( "fonts/InputSansCondensed-Black.ttf", srcFontSize, true ); // true==antialiasing
     textAlign( LEFT, TOP );
     noStroke();
 }
-    
+
 void draw() {
     background( 0. );
     
@@ -71,7 +141,7 @@ void draw() {
 
     // Blink and you'll miss it
     shader( shadr );
-    rect( 0, 0, width, height );
+    rect( 0, 0, getWidth(), getHeight() );
 
     resetShader();
     
@@ -90,7 +160,7 @@ void draw() {
         for ( i = 0; i < src.length && ! src[i].startsWith( "void main" ) ; ++i ) ;
         for ( j = 0; j < src0.length && ! src[j].startsWith( "void main" ) ; ++j ) ;
 
-        for ( int k = 1 ; i < src.length && 1.5 * ( k + 2 ) < height ; ++i, ++k ) {
+        for ( int k = 1 ; i < src.length && 1.5 * ( k + 2 ) < getHeight() ; ++i, ++k ) {
             // if corresponding lines of the shader file, counting from start of main(),
             // differ between current source and diffs baseline, reset the diffs counter for this line
             if ( k < diffs.length && ! src[i].equals( src0[j++] ) ) {
@@ -100,7 +170,7 @@ void draw() {
             if ( diffs[k] > 0 ) {
                 pushStyle();
                 fill( 1., 1., 0., .8 / diffsFadeFrames * diffs[k] );
-                rect( 0, 1.5 * k * srcFontSize, width, 1.5 * srcFontSize );
+                rect( 0, 1.5 * k * srcFontSize, getWidth(), 1.5 * srcFontSize );
                 popStyle();                
                 --diffs[k];
             }
@@ -119,7 +189,7 @@ void draw() {
             if ( record ) {
                 pushStyle();
                 fill( 1., 0., 0., 1. );
-                rect( 0, height - 1., width, 2. );
+                rect( 0, getHeight() - 1., getWidth(), 2. );
                 popStyle();
             }
         }
@@ -143,7 +213,7 @@ void draw() {
 void refresh() {
     shadr = loadShader( shaderPath );
     
-    shadr.set( "res", float( width ), float( height ) );
+    shadr.set( "res", float( getWidth() ), float( getHeight() ) );
         
     src0 = src; // update diffs baseline
     src = loadStrings( shaderPath );
@@ -249,7 +319,7 @@ class ShaderPipe implements AudioListener {
         
         float binWidth = 10.;
         float gutter = 2.;
-        float hEdge = width - ( 2. * fft.avgSize() + 3. ) * ( binWidth + gutter );
+        float hEdge = getWidth() - ( 2. * fft.avgSize() + 3. ) * ( binWidth + gutter );
             // 2 channels + 1 left/right margin + 1 channel gutter
         
         float scale = 50.; // make the signal more visible
@@ -260,7 +330,7 @@ class ShaderPipe implements AudioListener {
             fft.forward( left );
             for ( int i = 0; i < fft.avgSize(); ++i ) {
                 fill( 1., .2, 0., i >= binOffset && i < binOffset + 4 ? 1. : .5 ); // alpha out bins not sent to the shader
-                rect(   hEdge + ( i + 1. ) * ( binWidth + gutter ), height - 1.5 * srcFontSize - fft.getAvg( i ) * scale,
+                rect(   hEdge + ( i + 1. ) * ( binWidth + gutter ), getHeight() - 1.5 * srcFontSize - fft.getAvg( i ) * scale,
                         binWidth, fft.getAvg( i ) * scale );
             }
         }    
@@ -269,7 +339,7 @@ class ShaderPipe implements AudioListener {
             hEdge += ( fft.avgSize() + 1. ) * ( binWidth + gutter );
             for ( int i = 0; i < fft.avgSize(); ++i ) {
                 fill( 1., .2, 0., i >= binOffset && i < binOffset + 4 ? 1. : .5 ); // alpha out bins not sent to the shader
-                rect(   hEdge + ( i + 1. ) * ( binWidth + gutter ), height - 1.5 * srcFontSize - fft.getAvg( i ) * scale,
+                rect(   hEdge + ( i + 1. ) * ( binWidth + gutter ), getHeight() - 1.5 * srcFontSize - fft.getAvg( i ) * scale,
                         binWidth, fft.getAvg( i ) * scale );
             }
         }    

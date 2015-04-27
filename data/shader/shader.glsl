@@ -304,7 +304,7 @@ void main( void ) {
 
   //  c = abs( 1./p.x ) * .1 * b.x;
     //c = abs( 1./p.y ) * /*b.w /*/ b.x * sin( phi - .001 * t * r );
-    c = a.z * b.y + sin( phi + /*.01 * */ t * r * b.x ) ;
+    c = a.z * b.y + sin( phi + /*.01 * */ t * r * b.w ) ;
 
     c += noise( a );
     c = 1. - c;
@@ -314,4 +314,4 @@ void main( void ) {
     
     gl_FragColor = vec4( c - uv.x, c - uv.y, c, 1. ) ;
 }
-// fft 7 3 
+// fft  
