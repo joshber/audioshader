@@ -1,6 +1,7 @@
 // TODO
+// - Validate GLSL before calling shader()
+// http://www.linglom.com/programming/java/how-to-run-command-line-or-execute-external-application-from-java/
 // - Integrate Most Pixels Ever
-// https://github.com/shiffman/Most-Pixels-Ever-Processing/wiki
 
 // Most Pixels Ever -- treat multiple displays as a single viewport
 // https://github.com/shiffman/Most-Pixels-Ever-Processing/wiki/Processing-Tutorial
@@ -13,6 +14,8 @@ import ddf.minim.analysis.*; // for FFT
 // To get configuration and UI parameters from the shader source
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+
+import java.io.*; // to run GLSL validator externally
 
 TCPClient mpeSub;
 
@@ -32,6 +35,7 @@ float srcFontSize = 12.;
 
 String[] src, src0;
 int[] diffs;
+String errorLineNos;
 int diffsFadeFrames = 300; // # frames to mark diff lines
 
 final String shaderPath = "shader/shader.glsl";
@@ -45,6 +49,11 @@ boolean sketchFullScreen() {
  *
 TODO for multiple-host version:
 - Designate one host the listener, have it distribute FFT to the others
+- Ensure shared endpoint for the shader
+- Do we need to send a single value for t to all instances of the shader?
+  Maybe millis() from the listener?
+- What to do about recording mode? Maybe designate a recorder,
+  have it save jpegs for the whole rendered rect ... but what about the overlays?
 - Tweak frame rate and source diffs fade rate
 - Subsitute mpeSub.getMWidth() and getMHeight() for width and height -- see wrapper fns below
 
@@ -54,32 +63,18 @@ public void resetEvent( TCPClient sub ) {
     frameRate( 60 );
     colorMode( RGB, 1.0 );
 
-    // Set up audio listener
-    minim = new Minim( this );
-    input = minim.getLineIn();
-    pipe = new ShaderPipe();
-    input.addListener( pipe );
-    
-    // For highlighting source diffs
-    src = loadStrings( shaderPath );
-    diffs = new int[200];
-    for ( int i = 0; i < 200; ++i )
-        diffs[i] = 0;
-        
-    refresh(); // load shader and configuration, if any
-    
-    // For showing source and spectrum
-    srcFont = createFont( "fonts/InputSansCondensed-Black.ttf", srcFontSize, true ); // true==antialiasing
-    textAlign( LEFT, TOP );
-    noStroke();
-
+    // etc
 }
 
 // Supercedes draw() under Most Pixels Ever
 // -- called whenever the subscriber receives a "Draw next frame" message from the server
 void frameEvent( TCPClient sub ) {
-    // draw() stuff here
+    // Strategy: Each host renders the whole scene, then uses translate() to show just its part
+    // So the shader gets the master dimensions
+    // And each host renders the whole overlay
 }
+
+void draw() { } // Needed even though it's empty
 */
 
 // Wrappers to facilitate switching to multiple-hosts version
@@ -123,7 +118,7 @@ void setup() {
     refresh(); // load shader and configuration, if any
     
     // For showing source and spectrum
-    srcFont = createFont( "fonts/InputSansCondensed-Black.ttf", srcFontSize, true ); // true==antialiasing
+    srcFont = createFont( "fonts/SourceCodePro-Bold.otf", srcFontSize, true ); // true==antialiasing
     textAlign( LEFT, TOP );
     noStroke();
 }
@@ -141,82 +136,52 @@ void draw() {
 
     // Blink and you'll miss it
     shader( shadr );
-    rect( 0, 0, getWidth(), getHeight() );
+    rect( 0, 0, width, height );
+        // Here width and height need to be local, even in multiple-hosts mode
+        // GPU renders the whole scene, then we'd translate to display one section
 
     resetShader();
     
     if ( displaySource || record )
         src = loadStrings( "shader/shader.glsl" );
 
-    if ( displaySource ) {
-        pushStyle();
-                
-        // No background scrim: looks better without
-        
-        textFont( srcFont );
-        textSize( srcFontSize );
-
-        int i, j;
-        for ( i = 0; i < src.length && ! src[i].startsWith( "void main" ) ; ++i ) ;
-        for ( j = 0; j < src0.length && ! src[j].startsWith( "void main" ) ; ++j ) ;
-
-        for ( int k = 1 ; i < src.length && 1.5 * ( k + 2 ) < getHeight() ; ++i, ++k ) {
-            // if corresponding lines of the shader file, counting from start of main(),
-            // differ between current source and diffs baseline, reset the diffs counter for this line
-            if ( k < diffs.length && ! src[i].equals( src0[j++] ) ) {
-                diffs[k] = diffsFadeFrames;
-            }
-            // diffs highlighting fades over diffsFadeFrames from most recent diff on this line
-            if ( diffs[k] > 0 ) {
-                pushStyle();
-                fill( 1., 1., 0., .8 / diffsFadeFrames * diffs[k] );
-                rect( 0, 1.5 * k * srcFontSize, getWidth(), 1.5 * srcFontSize );
-                popStyle();                
-                --diffs[k];
-            }
-            
-            // Drop shadow
-            translate( 1., 1. );
-            fill( 0., .5 );
-            text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
-            translate( -1., -1. );
-
-            fill( 1., 1. ); // text color
-            text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
-            
-            // Show the recording indicator across the bottom
-            // Goes here so we can record with no UI artifact by concealing source
-            if ( record ) {
-                pushStyle();
-                fill( 1., 0., 0., 1. );
-                rect( 0, getHeight() - 1., getWidth(), 2. );
-                popStyle();
-            }
-        }
-        
-        popStyle();
-    }
-    
-    if ( displaySpectrum )
-        pipe.drawSpectrum();
-
     // Save the frame and the shader (no synchronization, always a chance of slippage)
+    // We do this here so there's no UI artifact in the frame (proved less than useful)
     if ( record ) {
         String path = String.format( "data/out/%s/%04d-%02d-%02d/", recordLabel, year(), month(), day() );
         saveFrame( path + "frames/######.jpg" );
         saveStrings( path + String.format( "shaders/%06d.glsl", frameCount ), src );
     }
+    
+    if ( displaySpectrum )
+        pipe.drawSpectrum();
+
+    if ( displaySource )
+        drawSource();
+}
+
+void stop() {
+    input.close();
+    minim.stop();
+    
+    super.stop();
 }
 
 // comparing last-modified dates using Java Nio proved gross,
 // so we simply reload and re-baseline diffs twice a second
 void refresh() {
+    src0 = src; // update diffs baseline
+    src = loadStrings( shaderPath );
+
+    //
+    // TODO: validateShader()
+    // UI: If the shader does not validate, show the nonvalidating one
+    //     but continue running the existing one
+    //     So update src0 and src first, but wait to call loadShader()
+
     shadr = loadShader( shaderPath );
     
     shadr.set( "res", float( getWidth() ), float( getHeight() ) );
-        
-    src0 = src; // update diffs baseline
-    src = loadStrings( shaderPath );
 
     //
     // Check last line of source for configuration and UI parameters
@@ -256,11 +221,88 @@ void refresh() {
         record = false;
 }
 
-void stop() {
-    input.close();
-    minim.stop();
-    
-    super.stop();
+void validateShader() {
+    try {
+        Runtime rt = Runtime.getRuntime();
+        Process p = rt.exec( dataPath( "" ) + "/shader/angle" + "" /*TODO: ARGS -- shaderPath etc */);
+        
+        BufferedReader errors = new BufferedReader( new InputStreamReader( p.getInputStream() ) );
+        
+        // For ideas see
+        // https://github.com/felixpalmer/glsl-validator/blob/master/glsl-validate.py
+        // https://github.com/WebGLTools/GL-Shader-Validator/blob/master/GLShaderValidator.py
+        // ^^ nice regex parsing of Angle output, starting line 85
+        
+        String l;
+        while ( ( l = errors.readLine() ) != null ) {
+            // For the time being, we're not flagging erroneous tokens in the displayed source,
+            // just noting whether a line had an error
+            
+            errorLineNos = "";
+            
+            // if /ERROR: 0:(\d+)
+            // errorLineNos += \1.toString() + " ";
+            // might look slow, but perhaps faster than having to reset a boolean array every time
+        }   
+    }
+    catch ( Exception e ) {
+        println( e.toString() );
+        //e.printStackTrace();
+    }
+}
+
+void drawSource() {
+    pushStyle();
+                
+    // No background scrim: looks better without
+        
+    textFont( srcFont );
+    textSize( srcFontSize );
+
+    int i, j;
+    for ( i = 0; i < src.length && ! src[i].startsWith( "void main" ) ; ++i ) ;
+    for ( j = 0; j < src0.length && ! src[j].startsWith( "void main" ) ; ++j ) ;
+
+    for ( int k = 1 ; i < src.length && 1.5 * ( k + 2 ) < getHeight() ; ++i, ++k ) {
+        // if corresponding lines of the shader file, counting from start of main(),
+        // differ between current source and diffs baseline, reset the diffs counter for this line
+        if ( k < diffs.length && ! src[i].equals( src0[j++] ) ) {
+            diffs[k] = diffsFadeFrames;
+        }
+        
+        // TODO Highlight lines with errors, searching errorLineNos for a match to i+1
+        // If there are any errors but they're not found here, must be above /^void main(/
+        // so put a red up arrow in the upper left corner
+
+        // diffs highlighting fades over diffsFadeFrames from most recent diff on this line
+        if ( diffs[k] > 0 ) {
+            pushStyle();
+            fill( 1., 1., 0., .8 / diffsFadeFrames * diffs[k] );
+            rect( 0, 1.5 * k * srcFontSize, getWidth(), 1.5 * srcFontSize );
+            popStyle();                
+            --diffs[k];
+        }
+            
+        // Drop shadow
+        translate( 1., 1. );
+        fill( 0., .5 );
+        text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
+        translate( -1., -1. );
+
+        fill( 1., 1. ); // text color
+        text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
+        
+        // Show the recording indicator across the bottom
+        // Goes here so we can record silently by concealing source
+        if ( record ) {
+            pushStyle();
+            fill( 1., 0., 0., 1. );
+            rect( 0, getHeight() - 1., getWidth(), 2. );
+            popStyle();
+        }
+    }
+        
+    popStyle();
 }
 
 class ShaderPipe implements AudioListener {
@@ -301,12 +343,16 @@ class ShaderPipe implements AudioListener {
         
         if ( left != null ) {
             fft.forward( left );
-            shadr.set( "a", fft.getAvg( binOffset + 0 ), fft.getAvg( binOffset + 1 ), fft.getAvg( binOffset + 2 ), fft.getAvg( binOffset + 3 ) );
+            shadr.set(  "a",
+                        fft.getAvg( binOffset + 0 ), fft.getAvg( binOffset + 1 ),
+                        fft.getAvg( binOffset + 2 ), fft.getAvg( binOffset + 3 ) );
             // if right==null, i.e., mono signal, b gets the same values as a
             if ( right != null ) {
                 fft.forward( right );
             }
-            shadr.set( "b", fft.getAvg( binOffset + 0 ), fft.getAvg( binOffset + 1 ), fft.getAvg( binOffset + 2 ), fft.getAvg( binOffset + 3 ) );
+            shadr.set(  "b",
+                        fft.getAvg( binOffset + 0 ), fft.getAvg( binOffset + 1 ),
+                        fft.getAvg( binOffset + 2 ), fft.getAvg( binOffset + 3 ) );
         }
         else {
             shadr.set( "a", 0., 0., 0., 0. );
@@ -342,7 +388,26 @@ class ShaderPipe implements AudioListener {
                 rect(   hEdge + ( i + 1. ) * ( binWidth + gutter ), getHeight() - 1.5 * srcFontSize - fft.getAvg( i ) * scale,
                         binWidth, fft.getAvg( i ) * scale );
             }
-        }    
+        }
+
+        //
+        // Display frame rate, upper right
+        
+        String fps = String.format( "%.2f fps", frameRate );
+        
+        textFont( srcFont );
+        textSize( srcFontSize );
+        textAlign( RIGHT, TOP );
+        hEdge = getWidth() - 1.5 * srcFontSize;
+
+        // Drop shadow
+        translate( 1., 1. );
+        fill( 0., .5 );
+        text( fps, hEdge, 1.5 * srcFontSize );
+        translate( -1., -1. );
+
+        fill( 1., .2, 0., 1. ); // text color
+        text( fps, hEdge, 1.5 * srcFontSize );
 
         popStyle();
     }

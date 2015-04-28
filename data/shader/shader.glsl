@@ -282,7 +282,7 @@ void main( void ) {
     vec2 uv = gl_FragCoord.xy / res;
 
     //vec2 uv = vec2( gl_FragCoord.x / res.x, 1. - ( gl_FragCoord.y / res.y ) );
-    vec2 p = 2. * uv - 1.; // [-1,1]
+    vec2 p = -1. + 2. * uv; // [-1,1]
 
     float phi = atan( p.y, p.x );
 
