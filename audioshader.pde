@@ -1,5 +1,16 @@
-// TODO
-// - Integrate Most Pixels Ever
+/* TODO
+ - Integrate Most Pixels Ever
+    - Validator
+    - Test the boolean[] approach to flagging validation errors?
+ - Include a line # in errorLineNos no more than once? (right now, multiples for multiple errors on a single line)
+*/
+
+/*
+ * audioshader -- Audio-driven live procedural video directly on the graphics layer
+ * Josh Berson jbrs@eml.cc, 2015
+ * MIT License
+ * Inspired by rob @hexler. Special thanks to Luca Mortellaro and Rohini Devasher
+ */
 
 // Most Pixels Ever -- treat multiple displays as a single viewport
 // https://github.com/shiffman/Most-Pixels-Ever-Processing/wiki/Processing-Tutorial
