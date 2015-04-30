@@ -1,5 +1,4 @@
 // TODO
-// - Refresh shader by time, not frames
 // - Integrate Most Pixels Ever
 
 // Most Pixels Ever -- treat multiple displays as a single viewport
@@ -10,11 +9,11 @@ import mpe.client.*;
 import ddf.minim.*;
 import ddf.minim.analysis.*; // for FFT
 
-// To get configuration and UI parameters from the shader source
+// To get configuration and UI parameters from the shader source, check ESSL validator output for errors 
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
-import java.io.*; // to run GLSL validator externally, see validateShader()
+import java.io.*; // to run ESSL validator externally, see validateShader()
 
 TCPClient mpeSub;
 
@@ -23,6 +22,7 @@ AudioInput input;
 ShaderPipe pipe;
 
 PShader shadr;
+int lastRefreshTime = 0;
 
 boolean displaySource = true;
 boolean displaySpectrum = true;
@@ -53,7 +53,7 @@ TODO for multiple-host version:
 - Do we need to send a single value for t to all instances of the shader?
   Maybe millis() from the listener?
 - What to do about recording mode? Maybe designate a recorder,
-  have it save jpegs for the whole rendered rect ... but what about the overlays?
+  have it save jpegs for the whole rendered rect ?
 - Tweak frame rate and source diffs fade rate
 - Subsitute mpeSub.getMWidth() and getMHeight() for width and height -- see wrapper fns below
 
@@ -125,12 +125,15 @@ void setup() {
 
 void draw() {
     background( 0. );
-    
+
     // Twice a second, check for an updated shader
-    if ( frameCount % 30 == 0 )
+    int t = millis();
+    if ( t - lastRefreshTime > 490 ) {
         refresh();
+        lastRefreshTime = t;
+    }
     
-    shadr.set( "t", float( millis() ) ); // float() bc ESSL can't do modulo on int (GLSL < 3.0)
+    shadr.set( "t", float( t ) ); // float() bc ESSL can't do modulo on int (GLSL < 3.0)
 
     pipe.passthru(); // pass the signal
 

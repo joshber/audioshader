@@ -287,10 +287,10 @@ void main( void ) {
     p.y += sin( 1. / res.x * t * PI - pow( p.x, 2. ) - pow( p.x, 2. ) );
     p.x += ( a.x / a.y > 1. ? 1. : -1. ) * sin( 1. / res.y * t * PI + pow( p.y, 2. ) + p.y );
 
-    c = .001 * abs( 1./p.x ) * b.x;
+    c = .5 * abs( 1./p.x ) * b.x;
 
     c += noise( a );
     
     gl_FragColor = vec4( c, c - uv.x, c - uv.y, 1. ) ;
 }
-// fft  
+// fft 7 3
