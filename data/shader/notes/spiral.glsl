@@ -277,20 +277,41 @@ float noise(vec4 v) {
 // *** End noise ***
 
 
+
 void main( void ) {
     vec2 uv = gl_FragCoord.xy / res;
 
+    //vec2 uv = vec2( gl_FragCoord.x / res.x, 1. - ( gl_FragCoord.y / res.y ) );
     vec2 p = -1. + 2. * uv; // [-1,1]
+
+    float phi = atan( p.y, p.x );
+
+    float r = length(p);
+    p = atan(p) * r;
     
     float c = 0.;
 
-    p.y += sin( 1. / res.x * t * PI - pow( p.x, 2. ) - pow( p.x, 2. ) );
-    p.x += ( a.x / a.y > 1. ? 1. : -1. ) * sin( 1. / res.y * t * PI + pow( p.y, 2. ) + p.y );
+    //p.y += sin( 1. / res.x * t * PI - pow( p.x, 2. ) - pow( p.x, 20. ) );
+    //p.x += sin( 1. / res.y * t * PI + pow( p.y, 2. ) + p.y );
+    //p.y = abs( sin( 1./res.x  * PI * t /*pow( p.x, 20. )*/ + p.x ) );
+    //p.x = abs( sin( 1./res.y * PI * t  + pow( p.y, 20. ) + p.y ) );
 
-    c = .001 * abs( 1./p.x ) * b.x;
+
+    //p.y = sin( 1. / res.x * -PI * t + pow( p.x, 10. ) + p.x );
+    //p.x = sin( 1. / res.y * -.1 * PI * t + pow( p.y, 10. ) + p.y );
+
+    //p.x += abs( sin( 1. / res.y * .1 * PI * t + pow( p.y, 20. ) + p.y ) );
+
+  //  c = abs( 1./p.x ) * .1 * b.x;
+    //c = abs( 1./p.y ) * /*b.w /*/ b.x * sin( phi - .001 * t * r );
+    c = a.z * b.y + sin( phi + /*.01 * */ t * r * b.w ) ;
 
     c += noise( a );
+    c = 1. - c;
     
-    gl_FragColor = vec4( c, c - uv.x, c - uv.y, 1. ) ;
+    //if ( uv.y < .5 /*sin( t )*/ ) c = clamp( noise( a * t ), 0., .5 );
+    ///*if ( uv.x > .5 )*/ c += .1 * noise( p /* t*/ );
+    
+    gl_FragColor = vec4( c - uv.x, c - uv.y, c, 1. ) ;
 }
 // fft  

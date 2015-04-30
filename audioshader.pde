@@ -1,6 +1,5 @@
 // TODO
-// - Validate GLSL before calling shader()
-// http://www.linglom.com/programming/java/how-to-run-command-line-or-execute-external-application-from-java/
+// - Refresh shader by time, not frames
 // - Integrate Most Pixels Ever
 
 // Most Pixels Ever -- treat multiple displays as a single viewport
@@ -15,7 +14,7 @@ import ddf.minim.analysis.*; // for FFT
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
-import java.io.*; // to run GLSL validator externally
+import java.io.*; // to run GLSL validator externally, see validateShader()
 
 TCPClient mpeSub;
 
@@ -39,6 +38,7 @@ String errorLineNos;
 int diffsFadeFrames = 300; // # frames to mark diff lines
 
 final String shaderPath = "shader/shader.glsl";
+final String validatorPath = "shader/essl_to_glsl_osx";
 
 boolean sketchFullScreen() {
     return false;
@@ -130,7 +130,7 @@ void draw() {
     if ( frameCount % 30 == 0 )
         refresh();
     
-    shadr.set( "t", float( millis() ) ); // float() bc GLSL < 3.0 can't do modulo on int
+    shadr.set( "t", float( millis() ) ); // float() bc ESSL can't do modulo on int (GLSL < 3.0)
 
     pipe.passthru(); // pass the signal
 
@@ -174,10 +174,12 @@ void refresh() {
     src = loadStrings( shaderPath );
 
     //
-    // TODO: validateShader()
-    // UI: If the shader does not validate, show the nonvalidating one
-    //     but continue running the existing one
-    //     So update src0 and src first, but wait to call loadShader()
+    // UI note:
+    // If the shader does not validate, show the nonvalidating one (with erroneous lines marked)
+    // but continue running the existing one
+    // So update src0 and src first, but wait to call loadShader()
+
+    if ( ! validateShader() ) return;
 
     shadr = loadShader( shaderPath );
     
@@ -221,10 +223,12 @@ void refresh() {
         record = false;
 }
 
-void validateShader() {
+boolean validateShader() {
+    final String cmd = dataPath( "" ) + "/" + validatorPath + " " + dataPath( "" ) + "/" + shaderPath;
+    boolean rc = true;
     try {
         Runtime rt = Runtime.getRuntime();
-        Process p = rt.exec( dataPath( "" ) + "/shader/angle" + "" /*TODO: ARGS -- shaderPath etc */);
+        Process p = rt.exec( cmd );
         
         BufferedReader errors = new BufferedReader( new InputStreamReader( p.getInputStream() ) );
         
@@ -233,22 +237,28 @@ void validateShader() {
         // https://github.com/WebGLTools/GL-Shader-Validator/blob/master/GLShaderValidator.py
         // ^^ nice regex parsing of Angle output, starting line 85
         
+        final Pattern errorNotice = Pattern.compile( "ERROR: 0:(\\d+)" );
+        Matcher m;
+        
         String l;
+        errorLineNos = "";
+        
         while ( ( l = errors.readLine() ) != null ) {
             // For the time being, we're not flagging erroneous tokens in the displayed source,
             // just noting whether a line had an error
             
-            errorLineNos = "";
-            
-            // if /ERROR: 0:(\d+)
-            // errorLineNos += \1.toString() + " ";
-            // might look slow, but perhaps faster than having to reset a boolean array every time
+            m = errorNotice.matcher( l );
+            if ( m.find() ) {
+                errorLineNos += m.group( 1 ).toString() + " ";
+                rc = false; // Did not validate
+            }
         }   
     }
     catch ( Exception e ) {
         println( e.toString() );
         //e.printStackTrace();
     }
+    return rc;
 }
 
 void drawSource() {
@@ -263,6 +273,8 @@ void drawSource() {
     for ( i = 0; i < src.length && ! src[i].startsWith( "void main" ) ; ++i ) ;
     for ( j = 0; j < src0.length && ! src[j].startsWith( "void main" ) ; ++j ) ;
 
+    boolean errorDisplayed = false;
+    
     for ( int k = 1 ; i < src.length && 1.5 * ( k + 2 ) < getHeight() ; ++i, ++k ) {
         // if corresponding lines of the shader file, counting from start of main(),
         // differ between current source and diffs baseline, reset the diffs counter for this line
@@ -270,12 +282,22 @@ void drawSource() {
             diffs[k] = diffsFadeFrames;
         }
         
-        // TODO Highlight lines with errors, searching errorLineNos for a match to i+1
+        // Highlight lines with errors, searching errorLineNos for a match to i+1
         // If there are any errors but they're not found here, must be above /^void main(/
-        // so put a red up arrow in the upper left corner
-
+        // so put a red bar at the top of the source display
+        // This approach won't catch the case where there are errors above main()
+        // as WELL as within, but that's fine -- focal case is live editing of main()
+        if ( errorLineNos.contains( Integer.toString( i + 1 ) + " " ) ) {
+            pushStyle();
+            fill( 1., 0., 0., .5 );
+            rect( 0, 1.5 * k * srcFontSize, getWidth(), 1.5 * srcFontSize );
+            popStyle();
+            errorDisplayed = true;
+        }
+        
         // diffs highlighting fades over diffsFadeFrames from most recent diff on this line
-        if ( diffs[k] > 0 ) {
+        // -- don't show diffs if the line has an error, just maintain the red
+        else if ( diffs[k] > 0 ) {
             pushStyle();
             fill( 1., 1., 0., .8 / diffsFadeFrames * diffs[k] );
             rect( 0, 1.5 * k * srcFontSize, getWidth(), 1.5 * srcFontSize );
@@ -291,15 +313,20 @@ void drawSource() {
 
         fill( 1., 1. ); // text color
         text( src[i], 1.5 * srcFontSize, 1.5 * k * srcFontSize );
-        
-        // Show the recording indicator across the bottom
-        // Goes here so we can record silently by concealing source
-        if ( record ) {
-            pushStyle();
-            fill( 1., 0., 0., 1. );
-            rect( 0, getHeight() - 1., getWidth(), 2. );
-            popStyle();
-        }
+    }
+    
+    // If the shader did not validate but there are no errors in main(),
+    // indicate that the problem comes earlier in the shader
+    if ( ! errorLineNos.equals( "" ) && errorDisplayed == false ) {
+        fill( 1., 0., 0., .5 );
+        rect( 0, 0, getWidth(), 1.5 * srcFontSize );
+    }
+    
+    // Show the recording indicator across the bottom
+    // Goes here so we can record silently by concealing source
+    if ( record ) {
+        fill( 1., 0., 0., 1. );
+        rect( 0, getHeight() - 1., getWidth(), 2. );
     }
         
     popStyle();
@@ -406,7 +433,7 @@ class ShaderPipe implements AudioListener {
         text( fps, hEdge, 1.5 * srcFontSize );
         translate( -1., -1. );
 
-        fill( 1., .2, 0., 1. ); // text color
+        fill( 1., 1. ); // text color
         text( fps, hEdge, 1.5 * srcFontSize );
 
         popStyle();
