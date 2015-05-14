@@ -279,18 +279,19 @@ float noise(vec4 v) {
 
 void main( void ) {
     vec2 uv = gl_FragCoord.xy / res;
-
     vec2 p = -1. + 2. * uv; // [-1,1]
-    
+
+    float phi = atan( p.y, p.x );
+    float r = length(p);
+
     float c = 0.;
 
-    p.y += sin( 1. / res.x * t * PI - pow( p.x, 2. ) - pow( p.x, 2. ) );
-    p.x += ( a.x / a.y > 1. ? 1. : -1. ) * sin( 1. / res.y * t * PI + pow( p.y, 2. ) + p.y );
+    //p += ( mod( t, 2. ) == 0. ? 100. : -100. ) * sin( vec2( noise( a ), noise( b ) + t ) );
+    p.x += .05 * sin( 10. / res.y * t + p.y );
+    c = .01 * b.y * ( abs( 1. / p.x ) );
+    //c = a.z * b.y + sin( phi + /*.01 * */ t * r * b.w ) ;
 
-    c = .5 * abs( 1./p.x ) * b.x;
-
-    c += noise( a );
-    
-    gl_FragColor = vec4( c, c - uv.x, c - uv.y, 1. ) ;
+    //c = 1. - c;    
+    gl_FragColor = vec4( c, c - uv.y - a.x, c - uv.x - b.x, 1. );
 }
-// fft 7 3
+// fft- 8 4

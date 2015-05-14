@@ -1,15 +1,23 @@
 /* TODO
  - Integrate Most Pixels Ever
-    - Validator
-    - Test the boolean[] approach to flagging validation errors?
- - Include a line # in errorLineNos no more than once? (right now, multiples for multiple errors on a single line)
+ - Validator
+    - Improve validation -- print validator output on every iteration, so we can see what it's missing
 */
 
 /*
- * audioshader -- Audio-driven live procedural video directly on the graphics layer
- * Josh Berson jbrs@eml.cc, 2015
- * MIT License
- * Inspired by rob @hexler. Special thanks to Luca Mortellaro and Rohini Devasher
+ audioshader : Audio-driven live procedural video directly on the graphics layer
+ Josh Berson jbrs@eml.cc, 2015
+ MIT License
+ Inspired by rob @hexler. Special thanks to Luca Mortellaro and Rohini Devasher
+ 
+ Log-binned spectrum is sent to the shader via a pair of vec4s, a and b, for left and right channels
+ 
+ Dynamic range and UI controls: In a comment in the final line of the shader
+ - fft x y : log bin the spectrum, with the smallest bin upper bounded by (sample rate >> x) and y bin offset
+   (so fft 7 3 means the spectrum will have 7 bins, the upper 4 get sent to the shader)
+ - -source : hide source and recording indicator
+ - -spec : hide spectrum visualizer and fps
+ - record x : record frames and per-frame shaders under the label x
  */
 
 // Most Pixels Ever -- treat multiple displays as a single viewport
@@ -23,6 +31,7 @@ import ddf.minim.analysis.*; // for FFT
 // To get configuration and UI parameters from the shader source, check ESSL validator output for errors 
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.HashMap;
 
 import java.io.*; // to run ESSL validator externally, see validateShader()
 
@@ -42,10 +51,11 @@ String recordLabel;
 
 PFont srcFont;
 float srcFontSize = 12.;
+String font = "InputSansCondensed-Black.ttf";
 
 String[] src, src0;
 int[] diffs;
-String errorLineNos;
+HashMap<Integer, Boolean> errorMap;
 int diffsFadeFrames = 300; // # frames to mark diff lines
 
 final String shaderPath = "shader/shader.glsl";
@@ -86,6 +96,9 @@ void frameEvent( TCPClient sub ) {
 }
 
 void draw() { } // Needed even though it's empty
+
+//
+// End of Most Pixels Ever framing
 */
 
 // Wrappers to facilitate switching to multiple-hosts version
@@ -125,11 +138,13 @@ void setup() {
     diffs = new int[200];
     for ( int i = 0; i < 200; ++i )
         diffs[i] = 0;
+
+    errorMap = new HashMap<Integer, Boolean>();
         
     refresh(); // load shader and configuration, if any
     
     // For showing source and spectrum
-    srcFont = createFont( "fonts/SourceCodePro-Bold.otf", srcFontSize, true ); // true==antialiasing
+    srcFont = createFont( "fonts/" + font, srcFontSize, true ); // true==antialiasing
     textAlign( LEFT, TOP );
     noStroke();
 }
@@ -255,7 +270,7 @@ boolean validateShader() {
         Matcher m;
         
         String l;
-        errorLineNos = "";
+        errorMap.clear();
         
         while ( ( l = errors.readLine() ) != null ) {
             // For the time being, we're not flagging erroneous tokens in the displayed source,
@@ -263,7 +278,7 @@ boolean validateShader() {
             
             m = errorNotice.matcher( l );
             if ( m.find() ) {
-                errorLineNos += m.group( 1 ).toString() + " ";
+                errorMap.put( Integer.valueOf( m.group( 1 ) ), true );
                 rc = false; // Did not validate
             }
         }   
@@ -296,12 +311,12 @@ void drawSource() {
             diffs[k] = diffsFadeFrames;
         }
         
-        // Highlight lines with errors, searching errorLineNos for a match to i+1
+        // Highlight lines with errors, checking errorMap for a match to i+1
         // If there are any errors but they're not found here, must be above /^void main(/
         // so put a red bar at the top of the source display
         // This approach won't catch the case where there are errors above main()
         // as WELL as within, but that's fine -- focal case is live editing of main()
-        if ( errorLineNos.contains( Integer.toString( i + 1 ) + " " ) ) {
+        if ( Boolean.TRUE.equals( errorMap.get( i + 1 ) ) ) {
             pushStyle();
             fill( 1., 0., 0., .5 );
             rect( 0, 1.5 * k * srcFontSize, getWidth(), 1.5 * srcFontSize );
@@ -331,7 +346,8 @@ void drawSource() {
     
     // If the shader did not validate but there are no errors in main(),
     // indicate that the problem comes earlier in the shader
-    if ( ! errorLineNos.equals( "" ) && errorDisplayed == false ) {
+    if ( ! errorMap.isEmpty() && errorDisplayed == false ) {
+        // TODO: How can we get here when there are errors ONLY above main() ?
         fill( 1., 0., 0., .5 );
         rect( 0, 0, getWidth(), 1.5 * srcFontSize );
     }
