@@ -281,12 +281,14 @@ boolean validateShader() {
                 errorMap.put( Integer.valueOf( m.group( 1 ) ), true );
                 rc = false; // Did not validate
             }
+            println( l );
         }   
     }
     catch ( Exception e ) {
         println( e.toString() );
-        //e.printStackTrace();
+        e.printStackTrace();
     }
+    println( "" );
     return rc;
 }
 

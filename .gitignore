@@ -1,2 +1,3 @@
 **/out/**
-/data/shaders/external/**
+/data/shader/external/**
+/data/fonts
